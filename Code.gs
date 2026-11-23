@@ -1,6 +1,23 @@
 // REPLACE WITH YOUR GOOGLE DRIVE FOLDER ID
 const DRIVE_FOLDER_ID = '1A2B3C4D5E6F7G8H9I0J';
 
+// Helper: Ensures Google Sheet Date objects or strings always format cleanly as YYYY-MM-DD
+function formatSheetDate(val) {
+  if (!val) return '';
+  if (val instanceof Date) {
+    return Utilities.formatDate(val, 'GMT+6', 'yyyy-MM-dd');
+  }
+  const s = String(val).trim().replace(/^'/, '');
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.substring(0, 10);
+  }
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, 'GMT+6', 'yyyy-MM-dd');
+  }
+  return s;
+}
+
 // 1. RECEIVES SURVEYS & GPS PINGS FROM THE APP
 function doPost(e) {
   try {
@@ -15,7 +32,7 @@ function doPost(e) {
       routeSheet.appendRow([
         'LOG-' + now.getTime(),
         payload.internId,
-        dateStr,
+        "'" + dateStr,
         timeStr,
         payload.lat,
         payload.lng
@@ -52,7 +69,7 @@ function doPost(e) {
       outlet.address || '',
       outlet.lat || '',
       outlet.lng || '',
-      dateStr,
+      "'" + dateStr,
       timeStr,
       photoUrl
     ]);
@@ -62,7 +79,7 @@ function doPost(e) {
       routeSheet.appendRow([
         'LOG-' + now.getTime(),
         payload.internId,
-        dateStr,
+        "'" + dateStr,
         timeStr,
         outlet.lat,
         outlet.lng
@@ -175,17 +192,19 @@ function doGet(e) {
     const outletsData = ss.getSheetByName('Outlets').getDataRange().getValues();
     const outlets = [];
     for (let i = 1; i < outletsData.length; i++) {
+      if (!outletsData[i][0]) continue;
       outlets.push({
-        outletId: String(outletsData[i][0]),
-        internId: String(outletsData[i][1]),
-        outletName: String(outletsData[i][2]),
-        outletType: String(outletsData[i][3]),
-        address: String(outletsData[i][5]),
+        outletId: String(outletsData[i][0]).trim(),
+        internId: String(outletsData[i][1]).trim(),
+        outletName: String(outletsData[i][2]).trim(),
+        outletType: String(outletsData[i][3]).trim(),
+        mobile: String(outletsData[i][4] || '').trim(),
+        address: String(outletsData[i][5] || '').trim(),
         lat: parseFloat(outletsData[i][6]) || null,
         lng: parseFloat(outletsData[i][7]) || null,
-        date: String(outletsData[i][8]),
-        time: String(outletsData[i][9]),
-        photoUrl: String(outletsData[i][10])
+        date: formatSheetDate(outletsData[i][8]),
+        time: String(outletsData[i][9] || '').trim(),
+        photoUrl: String(outletsData[i][10] || '').trim()
       });
     }
 
@@ -194,11 +213,11 @@ function doGet(e) {
     for (let i = 1; i < usersData.length; i++) {
       if (usersData[i][0]) {
         users.push({
-          username: String(usersData[i][0]),
-          fullName: String(usersData[i][1]),
-          userType: String(usersData[i][2]),
-          password: String(usersData[i][3]),
-          status: String(usersData[i][4] || 'Active')
+          username: String(usersData[i][0]).trim(),
+          fullName: String(usersData[i][1] || '').trim(),
+          userType: String(usersData[i][2] || 'intern').trim(),
+          password: String(usersData[i][3] || '').trim(),
+          status: String(usersData[i][4] || 'Active').trim()
         });
       }
     }
@@ -209,22 +228,22 @@ function doGet(e) {
   }
 
   if (type === 'coverage') {
-    const internId = e.parameter.internId;
-    const targetDate = e.parameter.date;
+    const internId = String(e.parameter.internId || '').trim().toLowerCase();
+    const targetDate = formatSheetDate(e.parameter.date || '');
     const outletsData = ss.getSheetByName('Outlets').getDataRange().getValues();
     const covered = [];
 
     for (let i = 1; i < outletsData.length; i++) {
-      const rowIntern = String(outletsData[i][1]);
-      const rowDate = String(outletsData[i][8]);
-      if (rowIntern === internId && (!targetDate || rowDate.includes(targetDate))) {
+      const rowIntern = String(outletsData[i][1] || '').trim().toLowerCase();
+      const rowDate = formatSheetDate(outletsData[i][8]);
+      if (rowIntern === internId && (!targetDate || rowDate === targetDate)) {
         covered.push({
-          outletId: outletsData[i][0],
-          outletName: outletsData[i][2],
-          outletType: outletsData[i][3],
-          address: outletsData[i][5],
+          outletId: String(outletsData[i][0]).trim(),
+          outletName: String(outletsData[i][2]).trim(),
+          outletType: String(outletsData[i][3]).trim(),
+          address: String(outletsData[i][5] || '').trim(),
           date: rowDate,
-          time: String(outletsData[i][9])
+          time: String(outletsData[i][9] || '').trim()
         });
       }
     }
@@ -234,20 +253,45 @@ function doGet(e) {
     ).setMimeType(ContentService.MimeType.JSON);
   }
 
-  const internId = e.parameter.internId;
-  const targetDate = e.parameter.date;
-  const routeData = ss.getSheetByName('Route_Logs').getDataRange().getValues();
+  // Daily route points (combines Route_Logs + Outlets coordinates for the intern & date)
+  const internId = String(e.parameter.internId || '').trim().toLowerCase();
+  const targetDate = formatSheetDate(e.parameter.date || '');
   const points = [];
 
-  for (let i = 1; i < routeData.length; i++) {
-    const rowIntern = String(routeData[i][1]);
-    const rowDate = String(routeData[i][2]);
-    if (rowIntern === internId && (!targetDate || rowDate.includes(targetDate))) {
-      points.push({
-        time: String(routeData[i][3]),
-        lat: parseFloat(routeData[i][4]),
-        lng: parseFloat(routeData[i][5])
-      });
+  const routeSheet = ss.getSheetByName('Route_Logs');
+  if (routeSheet) {
+    const routeData = routeSheet.getDataRange().getValues();
+    for (let i = 1; i < routeData.length; i++) {
+      const rowIntern = String(routeData[i][1] || '').trim().toLowerCase();
+      const rowDate = formatSheetDate(routeData[i][2]);
+      const lat = parseFloat(routeData[i][4]);
+      const lng = parseFloat(routeData[i][5]);
+      if (rowIntern === internId && (!targetDate || rowDate === targetDate) && !isNaN(lat) && !isNaN(lng)) {
+        points.push({
+          time: String(routeData[i][3] || '').trim(),
+          lat: lat,
+          lng: lng
+        });
+      }
+    }
+  }
+
+  // Fallback to Outlets coordinates if Route_Logs has no entries for that date
+  if (points.length === 0) {
+    const outletsData = ss.getSheetByName('Outlets').getDataRange().getValues();
+    for (let i = 1; i < outletsData.length; i++) {
+      const rowIntern = String(outletsData[i][1] || '').trim().toLowerCase();
+      const rowDate = formatSheetDate(outletsData[i][8]);
+      const lat = parseFloat(outletsData[i][6]);
+      const lng = parseFloat(outletsData[i][7]);
+      if (rowIntern === internId && (!targetDate || rowDate === targetDate) && !isNaN(lat) && !isNaN(lng)) {
+        points.push({
+          time: String(outletsData[i][9] || '').trim(),
+          label: String(outletsData[i][2] || '').trim(),
+          lat: lat,
+          lng: lng
+        });
+      }
     }
   }
 

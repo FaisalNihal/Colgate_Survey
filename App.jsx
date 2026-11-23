@@ -149,6 +149,25 @@ const getLocalDateString = (offsetDays = 0) => {
   return `${year}-${month}-${day}`;
 };
 
+const normalizeDateString = (raw) => {
+  if (!raw) return '';
+  const str = String(raw).trim().replace(/^'/, '');
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    return str.substring(0, 10);
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return str;
+};
+
+const sameId = (a, b) =>
+  String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
 const haversineKm = (lat1, lon1, lat2, lon2) => {
   const R = 6371;
   const toRad = (deg) => (deg * Math.PI) / 180;
@@ -219,8 +238,9 @@ export default function App() {
     }
   });
 
-  const [usernameInput, setUsernameInput] = useState('USR-015');
-  const [passwordInput, setPasswordInput] = useState('colgate15');
+  const [loginRole, setLoginRole] = useState('intern');
+  const [usernameInput, setUsernameInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -367,7 +387,7 @@ export default function App() {
       );
 
       if (!matched) {
-        setLoginError('Invalid credentials. (Preview defaults: admin / admin123 or USR-001..USR-015 / colgate01..colgate15)');
+        setLoginError('Invalid username or password. Please check your credentials and try again.');
         return;
       }
 
@@ -416,8 +436,8 @@ export default function App() {
 
     setIsOutletSaved(true);
     showModal(
-      'Outlet Locked & Verified',
-      'Outlet details have been verified and saved. Product survey sections are now unlocked.',
+      'Outlet Locked & Saved',
+      'Outlet details have been saved. Product survey sections are now unlocked.',
       'success'
     );
   };
@@ -490,7 +510,8 @@ export default function App() {
         internId: currentUser.username,
         outletName: outletData.name.trim(),
         outletType: outletData.type,
-        address: outletData.address.trim() || 'GPS Verified Location',
+        mobile: outletData.mobile.trim(),
+        address: outletData.address.trim() || 'GPS Location Recorded',
         lat: parseFloat(outletData.lat) || null,
         lng: parseFloat(outletData.lng) || null,
         date: todayStr,
@@ -533,7 +554,7 @@ export default function App() {
   };
 
   // ==========================================================================
-  // VIEW A: UNIFIED LOGIN PORTAL (Routes to Admin Panel OR Intern App)
+  // VIEW A: UNIFIED LOGIN PORTAL (Intern Login & Admin Login)
   // ==========================================================================
   if (!currentUser) {
     return (
@@ -549,6 +570,38 @@ export default function App() {
             <p className="text-xs text-red-700/80 font-medium tracking-wide mt-1">Colgate Retail Visibility Audit</p>
           </div>
 
+          {/* Role Switcher: Intern Login vs Admin Login */}
+          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl mb-5">
+            <button
+              type="button"
+              onClick={() => {
+                setLoginRole('intern');
+                setLoginError('');
+              }}
+              className={`py-2.5 rounded-xl text-xs font-bold transition-all ${
+                loginRole === 'intern'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Intern Login
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginRole('admin');
+                setLoginError('');
+              }}
+              className={`py-2.5 rounded-xl text-xs font-bold transition-all ${
+                loginRole === 'admin'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Admin Login
+            </button>
+          </div>
+
           {loginError && (
             <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-bold text-red-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -558,14 +611,16 @@ export default function App() {
           
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Username</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">
+                {loginRole === 'admin' ? 'Admin Username' : 'Intern Username'}
+              </label>
               <input
                 required
                 type="text"
                 value={usernameInput}
                 onChange={(e) => setUsernameInput(e.target.value)}
                 className="w-full border-gray-200 rounded-xl shadow-sm focus:border-red-600 focus:ring-red-600 p-3 text-sm font-semibold border bg-gray-50/50"
-                placeholder="e.g. USR-015 or admin"
+                placeholder={loginRole === 'admin' ? 'Enter admin username' : 'e.g. USR-001'}
               />
             </div>
             <div>
@@ -580,38 +635,21 @@ export default function App() {
               />
             </div>
 
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setUsernameInput('USR-015');
-                  setPasswordInput('colgate15');
-                  setLoginError('');
-                }}
-                className="text-[11px] font-semibold text-gray-500 hover:text-red-600 underline"
-              >
-                Fill Intern Demo
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setUsernameInput('admin');
-                  setPasswordInput('admin123');
-                  setLoginError('');
-                }}
-                className="text-[11px] font-semibold text-gray-500 hover:text-red-600 underline"
-              >
-                Fill Admin Demo
-              </button>
-            </div>
-
             <button
               type="submit"
               disabled={isLoggingIn}
-              className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white p-3.5 rounded-xl font-bold shadow-lg shadow-red-600/30 hover:from-red-700 hover:to-red-800 transition-all active:scale-[0.98] mt-2 flex items-center justify-center gap-2 disabled:opacity-60"
+              className={`w-full text-white p-3.5 rounded-xl font-bold shadow-lg transition-all active:scale-[0.98] mt-2 flex items-center justify-center gap-2 disabled:opacity-60 ${
+                loginRole === 'admin'
+                  ? 'bg-slate-900 hover:bg-slate-800 shadow-slate-900/25'
+                  : 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 shadow-red-600/30'
+              }`}
             >
               {isLoggingIn && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isLoggingIn ? 'Verifying Credentials...' : 'Sign In'}
+              {isLoggingIn
+                ? 'Signing In...'
+                : loginRole === 'admin'
+                ? 'Sign In as Admin'
+                : 'Sign In as Intern'}
             </button>
           </div>
         </form>
@@ -640,8 +678,8 @@ export default function App() {
   // ==========================================================================
   // VIEW C: INTERN SURVEY APP (When logged in user has userType === 'intern')
   // ==========================================================================
-  const userCoveredOutlets = coveredOutlets.filter(
-    (item) => item.internId === currentUser.username
+  const userCoveredOutlets = coveredOutlets.filter((item) =>
+    sameId(item.internId, currentUser.username)
   );
 
   return (
@@ -850,7 +888,8 @@ const AdminDashboard = ({
   const [remoteOutlets, setRemoteOutlets] = useState(null);
   const [remoteUsers, setRemoteUsers] = useState(null);
   const [selectedDate, setSelectedDate] = useState(getLocalDateString(0));
-  const [selectedIntern, setSelectedIntern] = useState('USR-015');
+  const [outletInternFilter, setOutletInternFilter] = useState('ALL');
+  const [selectedIntern, setSelectedIntern] = useState('USR-001');
   const [isSyncing, setIsSyncing] = useState(false);
 
   const fetchAdminData = () => {
@@ -859,8 +898,17 @@ const AdminDashboard = ({
     fetch(`${GOOGLE_SCRIPT_URL}?type=admin_data`)
       .then((res) => res.json())
       .then((json) => {
-        if (Array.isArray(json.outlets)) setRemoteOutlets(json.outlets);
-        if (Array.isArray(json.users)) setRemoteUsers(json.users);
+        if (Array.isArray(json.outlets)) {
+          setRemoteOutlets(
+            json.outlets.map((o) => ({
+              ...o,
+              date: normalizeDateString(o.date)
+            }))
+          );
+        }
+        if (Array.isArray(json.users)) {
+          setRemoteUsers(json.users);
+        }
       })
       .catch(() => {})
       .finally(() => setIsSyncing(false));
@@ -870,17 +918,58 @@ const AdminDashboard = ({
     fetchAdminData();
   }, []);
 
-  const allOutlets = remoteOutlets !== null ? remoteOutlets : localOutlets;
-  const usersList = remoteUsers !== null ? remoteUsers : FALLBACK_USERS;
+  const allOutlets = (remoteOutlets !== null ? remoteOutlets : localOutlets).map((o) => ({
+    ...o,
+    date: normalizeDateString(o.date)
+  }));
+
+  // Merge fallback users + Google Sheet Users + any intern IDs present in submitted outlets so the list is never empty
+  const mergedUsersMap = new Map();
+  FALLBACK_USERS.forEach((u) => mergedUsersMap.set(u.username.toLowerCase(), u));
+  if (Array.isArray(remoteUsers)) {
+    remoteUsers.forEach((u) => {
+      if (u.username) {
+        mergedUsersMap.set(u.username.trim().toLowerCase(), {
+          ...u,
+          username: u.username.trim()
+        });
+      }
+    });
+  }
+  allOutlets.forEach((o) => {
+    const id = String(o.internId || '').trim();
+    if (id && !mergedUsersMap.has(id.toLowerCase())) {
+      mergedUsersMap.set(id.toLowerCase(), {
+        username: id,
+        fullName: `Field Intern (${id})`,
+        userType: 'intern',
+        password: ''
+      });
+    }
+  });
+
+  const usersList = Array.from(mergedUsersMap.values());
   const internAccounts = usersList.filter(
     (u) => (u.userType || 'intern').toLowerCase() === 'intern'
   );
 
+  useEffect(() => {
+    if (internAccounts.length > 0 && !internAccounts.some((u) => sameId(u.username, selectedIntern))) {
+      setSelectedIntern(internAccounts[0].username);
+    }
+  }, [internAccounts.length]);
+
   const todayStr = getLocalDateString(0);
   const todayOutletsCount = allOutlets.filter((o) => o.date === todayStr).length;
+
   const dateFilteredOutlets = selectedDate
     ? allOutlets.filter((o) => o.date === selectedDate)
     : allOutlets;
+
+  const visibleOutletsList =
+    outletInternFilter === 'ALL'
+      ? dateFilteredOutlets
+      : dateFilteredOutlets.filter((o) => sameId(o.internId, outletInternFilter));
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans pb-20">
@@ -950,7 +1039,7 @@ const AdminDashboard = ({
                   Today ({todayStr})
                 </span>
                 <span className="text-2xl font-black text-gray-900 mt-1 block">{todayOutletsCount}</span>
-                <span className="text-[10px] text-emerald-600 font-semibold block">Outlets Verified</span>
+                <span className="text-[10px] text-emerald-600 font-semibold block">Outlets Submitted</span>
               </div>
 
               <div className="bg-white border border-gray-200 p-4 rounded-2xl shadow-sm">
@@ -962,25 +1051,42 @@ const AdminDashboard = ({
               </div>
             </div>
 
-            {/* Date Filter for Intern Leaderboard */}
+            {/* Date Filter & Intern Coverage Breakdown */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-red-600" /> Intern Coverage by Date
-                </h2>
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-red-600" /> Intern Coverage Summary
+                  </h2>
+                  <p className="text-[11px] text-gray-500">
+                    How many outlets each intern visited on {selectedDate || 'all dates'} vs total
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDate(todayStr)}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${
+                      selectedDate === todayStr
+                        ? 'bg-red-600 text-white border-red-600'
+                        : 'bg-gray-50 text-gray-700 border-gray-200'
+                    }`}
+                  >
+                    Today
+                  </button>
                   <input
                     type="date"
                     value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-gray-50"
+                    onChange={(e) => setSelectedDate(normalizeDateString(e.target.value))}
+                    className="border border-gray-300 rounded-lg px-2 py-1 text-xs font-bold text-gray-800 bg-gray-50"
                   />
                   {selectedDate && (
                     <button
+                      type="button"
                       onClick={() => setSelectedDate('')}
-                      className="text-xs font-bold text-red-600 hover:underline"
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-700 hover:bg-slate-200"
                     >
-                      All
+                      All Dates
                     </button>
                   )}
                 </div>
@@ -988,33 +1094,54 @@ const AdminDashboard = ({
 
               <div className="divide-y divide-gray-100">
                 {internAccounts.map((intern) => {
-                  const count = dateFilteredOutlets.filter(
-                    (o) => (o.internId || '').toLowerCase() === intern.username.toLowerCase()
+                  const dateCount = dateFilteredOutlets.filter((o) =>
+                    sameId(o.internId, intern.username)
                   ).length;
+                  const totalInternCount = allOutlets.filter((o) =>
+                    sameId(o.internId, intern.username)
+                  ).length;
+
                   return (
-                    <div key={intern.username} className="py-2.5 flex items-center justify-between">
-                      <div>
+                    <div key={intern.username} className="py-2.5 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
                         <span className="text-xs font-bold text-gray-900">{intern.username}</span>
-                        <span className="text-xs text-gray-500 ml-2">{intern.fullName}</span>
+                        <span className="text-xs text-gray-500 ml-2 truncate">{intern.fullName}</span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
                         <span
                           className={`text-xs font-black px-2.5 py-1 rounded-full ${
-                            count > 0
-                              ? 'bg-red-50 text-red-700 border border-red-200'
+                            dateCount > 0
+                              ? 'bg-red-600 text-white shadow-sm'
                               : 'bg-gray-100 text-gray-500'
                           }`}
                         >
-                          {count} {count === 1 ? 'outlet' : 'outlets'}
+                          {selectedDate ? `${dateCount} on date` : `${totalInternCount} total`}
                         </span>
+                        {selectedDate && (
+                          <span className="text-[11px] font-semibold text-gray-500">
+                            ({totalInternCount} all-time)
+                          </span>
+                        )}
                         <button
+                          type="button"
+                          onClick={() =>
+                            setOutletInternFilter(
+                              sameId(outletInternFilter, intern.username) ? 'ALL' : intern.username
+                            )
+                          }
+                          className="text-[11px] font-bold text-red-600 hover:underline"
+                        >
+                          Outlets
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => {
                             setSelectedIntern(intern.username);
                             setAdminTab('routes');
                           }}
                           className="text-[11px] font-bold text-slate-600 hover:text-red-600 underline"
                         >
-                          View Route
+                          Route
                         </button>
                       </div>
                     </div>
@@ -1023,29 +1150,52 @@ const AdminDashboard = ({
               </div>
             </div>
 
-            {/* Recent Outlet Submissions */}
+            {/* Visited Outlets List (With Intern Filter + Photo & Product Visibility) */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3">
-              <h2 className="text-sm font-black text-gray-900">
-                Submitted Outlets ({dateFilteredOutlets.length})
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                  <Store className="w-4 h-4 text-red-600" /> Visited Outlets ({visibleOutletsList.length})
+                </h2>
 
-              {dateFilteredOutlets.length === 0 ? (
+                <select
+                  value={outletInternFilter}
+                  onChange={(e) => setOutletInternFilter(e.target.value)}
+                  className="border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-gray-50"
+                >
+                  <option value="ALL">All Interns ({dateFilteredOutlets.length})</option>
+                  {internAccounts.map((u) => (
+                    <option key={u.username} value={u.username}>
+                      {u.username} ({u.fullName})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {visibleOutletsList.length === 0 ? (
                 <p className="text-xs text-gray-500 py-6 text-center">
-                  No outlets recorded for {selectedDate || 'the selected filter'}.
+                  No visited outlets found for {selectedDate || 'all dates'}
+                  {outletInternFilter !== 'ALL' ? ` by ${outletInternFilter}` : ''}.
                 </p>
               ) : (
                 <div className="space-y-2.5">
-                  {dateFilteredOutlets.slice(0, 25).map((o) => (
-                    <div key={o.outletId} className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-gray-900 truncate">{o.outletName}</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-600">
+                  {visibleOutletsList.map((o) => (
+                    <div key={o.outletId} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black text-gray-900">{o.outletName}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-700">
                             {o.outletType}
                           </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-50 border border-red-200 text-red-700">
+                            {o.internId}
+                          </span>
                         </div>
-                        <p className="text-[11px] text-gray-500 mt-0.5">
-                          By <strong>{o.internId}</strong> • {o.date} at {o.time}
+                        {o.address && (
+                          <p className="text-[11px] text-gray-600">{o.address}</p>
+                        )}
+                        <p className="text-[11px] text-gray-500">
+                          Visited on <strong>{o.date}</strong> at {o.time}
+                          {o.mobile ? ` • Mob: ${o.mobile}` : ''}
                         </p>
                       </div>
 
@@ -1054,14 +1204,14 @@ const AdminDashboard = ({
                           href={o.photoUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-[11px] font-bold text-red-600 bg-white border border-red-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 shrink-0 hover:bg-red-50"
+                          className="text-[11px] font-bold text-red-600 bg-white border border-red-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 shrink-0 hover:bg-red-50 shadow-sm"
                         >
                           <span>Photo</span>
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       ) : (
-                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded">
-                          Verified
+                        <span className="text-[10px] font-semibold text-slate-600 bg-white border border-slate-200 px-2 py-1 rounded shrink-0">
+                          Submitted
                         </span>
                       )}
                     </div>
@@ -1075,25 +1225,24 @@ const AdminDashboard = ({
         {/* TAB 2: ADMIN INTERN ROUTE & TERRITORY CIRCLE TRACKER */}
         {adminTab === 'routes' && (
           <div className="space-y-3">
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
-                  Select Intern to Track
-                </label>
-                <select
-                  value={selectedIntern}
-                  onChange={(e) => setSelectedIntern(e.target.value)}
-                  className="border border-gray-300 rounded-xl px-3 py-2 text-xs font-bold text-gray-900 bg-gray-50"
-                >
-                  {internAccounts.map((u) => (
-                    <option key={u.username} value={u.username}>
-                      {u.username} — {u.fullName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <p className="text-xs text-gray-500 max-w-xs">
-                Inspect daily walking/travel route, shaded territory circle, and distance covered.
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-2">
+              <label htmlFor="adminInternSelect" className="block text-xs font-bold uppercase text-gray-700">
+                Select Intern to Track ({internAccounts.length} Interns)
+              </label>
+              <select
+                id="adminInternSelect"
+                value={selectedIntern}
+                onChange={(e) => setSelectedIntern(e.target.value)}
+                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm font-bold text-gray-900 bg-gray-50 focus:ring-2 focus:ring-red-500"
+              >
+                {internAccounts.map((u) => (
+                  <option key={u.username} value={u.username}>
+                    {u.username} — {u.fullName}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-500">
+                Choose an intern above and select a date below to inspect their route line, area circle, and distance covered.
               </p>
             </div>
 
@@ -1256,7 +1405,12 @@ const CoveredOutletsSection = ({ internId, localRecords }) => {
       .then((res) => res.json())
       .then((json) => {
         if (Array.isArray(json.outlets)) {
-          setRemoteRecords(json.outlets);
+          setRemoteRecords(
+            json.outlets.map((o) => ({
+              ...o,
+              date: normalizeDateString(o.date)
+            }))
+          );
         }
       })
       .catch(() => {})
@@ -1267,25 +1421,44 @@ const CoveredOutletsSection = ({ internId, localRecords }) => {
     fetchCoverageFromSheet();
   }, [internId]);
 
-  const records = remoteRecords !== null ? remoteRecords : localRecords;
+  // Combine Google Sheet rows with any just-submitted local rows (deduped by outletName + date + time)
+  const normalizedLocal = localRecords.map((o) => ({
+    ...o,
+    date: normalizeDateString(o.date)
+  }));
+
+  const records = (() => {
+    if (remoteRecords === null) return normalizedLocal;
+    const combined = [...remoteRecords];
+    normalizedLocal.forEach((loc) => {
+      const exists = combined.some(
+        (rem) =>
+          rem.outletId === loc.outletId ||
+          (rem.outletName === loc.outletName && rem.date === loc.date && rem.time === loc.time)
+      );
+      if (!exists) combined.unshift(loc);
+    });
+    return combined;
+  })();
+
   const activeDateTarget =
     filterMode === 'today'
       ? todayStr
       : filterMode === 'yesterday'
       ? yesterdayStr
       : filterMode === 'custom'
-      ? selectedDate
+      ? normalizeDateString(selectedDate)
       : null;
 
   const filteredRecords = activeDateTarget
-    ? records.filter((item) => item.date === activeDateTarget)
+    ? records.filter((item) => normalizeDateString(item.date) === activeDateTarget)
     : records;
 
-  const todayCount = records.filter((item) => item.date === todayStr).length;
+  const todayCount = records.filter((item) => normalizeDateString(item.date) === todayStr).length;
   const totalCount = records.length;
 
   const handleDatePickerChange = (e) => {
-    const val = e.target.value;
+    const val = normalizeDateString(e.target.value);
     if (val) {
       setSelectedDate(val);
       setFilterMode('custom');
@@ -1337,7 +1510,7 @@ const CoveredOutletsSection = ({ internId, localRecords }) => {
               Today
             </span>
             <span className="text-2xl font-black text-gray-900 mt-0.5 block">{todayCount}</span>
-            <span className="text-[10px] text-emerald-600 font-semibold block">Verified</span>
+            <span className="text-[10px] text-emerald-600 font-semibold block">Submitted</span>
           </div>
 
           <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl">
@@ -1467,7 +1640,7 @@ const CoveredOutletsSection = ({ internId, localRecords }) => {
 
               <div className="flex flex-col items-end shrink-0 gap-1.5">
                 <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  <CheckCircle2 className="w-3 h-3" /> Saved
+                  <CheckCircle2 className="w-3 h-3" /> Submitted
                 </span>
                 {typeof outlet.companiesCount === 'number' && (
                   <span className="text-[11px] font-semibold text-gray-600">
@@ -2198,20 +2371,30 @@ const MapSection = ({ internId, localRecords }) => {
   const [mapReady, setMapReady] = useState(false);
   const [selectedDate, setSelectedDate] = useState(getLocalDateString(0));
   const [remotePoints, setRemotePoints] = useState(null);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
   useEffect(() => {
-    if (!GOOGLE_SCRIPT_URL) return;
+    setRemotePoints(null);
+    if (!GOOGLE_SCRIPT_URL || !internId) return;
+    setIsLoadingRoute(true);
     const url = `${GOOGLE_SCRIPT_URL}?type=route&internId=${encodeURIComponent(internId)}&date=${encodeURIComponent(selectedDate)}`;
     fetch(url)
       .then((res) => res.json())
       .then((json) => {
         if (Array.isArray(json.points)) {
           setRemotePoints(
-            json.points.filter((p) => !isNaN(p.lat) && !isNaN(p.lng))
+            json.points.filter((p) => !isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lng))).map((p) => ({
+              ...p,
+              lat: parseFloat(p.lat),
+              lng: parseFloat(p.lng)
+            }))
           );
+        } else {
+          setRemotePoints([]);
         }
       })
-      .catch(() => {});
+      .catch(() => setRemotePoints([]))
+      .finally(() => setIsLoadingRoute(false));
   }, [internId, selectedDate]);
 
   useEffect(() => {
@@ -2244,25 +2427,34 @@ const MapSection = ({ internId, localRecords }) => {
   }, []);
 
   const localDayPoints = localRecords
-    .filter((r) => r.internId === internId && r.date === selectedDate && r.lat && r.lng)
+    .filter(
+      (r) =>
+        sameId(r.internId, internId) &&
+        normalizeDateString(r.date) === selectedDate &&
+        r.lat &&
+        r.lng
+    )
     .reverse()
     .map((r, i) => ({
-      lat: r.lat,
-      lng: r.lng,
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lng),
       time: r.time,
       label: `Outlet #${i + 1}: ${r.outletName}`
     }));
+
+  const hasLiveGpsData =
+    (remotePoints && remotePoints.length > 0) || localDayPoints.length > 0;
 
   const activePoints =
     remotePoints && remotePoints.length > 0
       ? remotePoints
       : localDayPoints.length > 0
       ? localDayPoints
-      : SAMPLE_PREVIEW_ROUTE;
+      : !GOOGLE_SCRIPT_URL
+      ? SAMPLE_PREVIEW_ROUTE
+      : [];
 
-  const isUsingSample =
-    (!remotePoints || remotePoints.length === 0) && localDayPoints.length === 0;
-
+  const isUsingSample = !GOOGLE_SCRIPT_URL && !hasLiveGpsData;
   const distanceKm = computeTotalRouteKm(activePoints);
 
   useEffect(() => {
@@ -2271,6 +2463,26 @@ const MapSection = ({ internId, localRecords }) => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.remove();
       mapInstanceRef.current = null;
+    }
+
+    // Default center (Dhaka) when an intern has 0 GPS points on the chosen date
+    if (activePoints.length === 0) {
+      const map = window.L.map(mapContainerRef.current, { zoomControl: true }).setView(
+        [23.8103, 90.4125],
+        13
+      );
+      mapInstanceRef.current = map;
+      window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+      setTimeout(() => map.invalidateSize(), 250);
+      return () => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+        }
+      };
     }
 
     const coords = activePoints.map((p) => [p.lat, p.lng]);
@@ -2362,7 +2574,14 @@ const MapSection = ({ internId, localRecords }) => {
           <div>
             <h2 className="font-bold text-gray-800">Daily Route Tracker</h2>
             <p className="text-xs text-gray-500">
-              User: {internId} {isUsingSample ? '• Sample Route Preview' : '• Live GPS Track'}
+              Intern: <strong>{internId}</strong>{' '}
+              {isLoadingRoute
+                ? '• Loading GPS...'
+                : isUsingSample
+                ? '• Sample Route Preview'
+                : activePoints.length > 0
+                ? `• ${activePoints.length} GPS Points`
+                : `• No GPS logs on ${selectedDate}`}
             </p>
           </div>
           <div className="text-right">
@@ -2373,12 +2592,25 @@ const MapSection = ({ internId, localRecords }) => {
 
         <div className="flex items-center justify-between gap-2 pt-1">
           <span className="text-[11px] font-bold text-gray-600 uppercase">Route Date:</span>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-            className="border border-gray-300 rounded-lg px-2.5 py-1 text-xs font-semibold bg-white focus:ring-2 focus:ring-red-500"
-          />
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedDate(getLocalDateString(0))}
+              className={`px-2 py-1 rounded-md text-[11px] font-bold border ${
+                selectedDate === getLocalDateString(0)
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'bg-white text-gray-700 border-gray-300'
+              }`}
+            >
+              Today
+            </button>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => e.target.value && setSelectedDate(normalizeDateString(e.target.value))}
+              className="border border-gray-300 rounded-lg px-2.5 py-1 text-xs font-semibold bg-white focus:ring-2 focus:ring-red-500"
+            />
+          </div>
         </div>
       </div>
       
@@ -2389,6 +2621,11 @@ const MapSection = ({ internId, localRecords }) => {
               <Loader2 className="w-5 h-5 animate-spin" />
               <span className="text-sm font-medium">Loading OpenStreetMap...</span>
             </div>
+          </div>
+        )}
+        {mapReady && !isLoadingRoute && GOOGLE_SCRIPT_URL && activePoints.length === 0 && (
+          <div className="absolute top-3 left-3 right-3 z-[400] bg-white/95 backdrop-blur border border-amber-200 rounded-xl px-3.5 py-2.5 shadow-md text-xs font-semibold text-amber-900 text-center">
+            No outlets or GPS pings recorded for <strong>{internId}</strong> on <strong>{selectedDate}</strong>.
           </div>
         )}
         <div ref={mapContainerRef} className="w-full h-full" style={{ minHeight: '350px' }} />
