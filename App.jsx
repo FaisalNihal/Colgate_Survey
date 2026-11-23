@@ -47,7 +47,7 @@ const FALLBACK_USERS = [
 ];
 
 // ============================================================================
-// 2. PRODUCT CATALOG & SKU RANGES (From outlet survey.xlsx + Google Sheet Sync)
+// 2. PRODUCT CATALOG & SKU RANGES (Embedded from outlet survey.xlsx + Sheet Sync)
 // ============================================================================
 const DEFAULT_SURVEY_CATALOG = {
   toothpaste: {
@@ -242,6 +242,14 @@ export default function App() {
     return [];
   });
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('colgate_covered_outlets_v1', JSON.stringify(coveredOutlets));
+    } catch (e) {
+      console.warn('Could not persist local coverage history', e);
+    }
+  }, [coveredOutlets]);
+
   // Survey Data State
   const [outletData, setOutletData] = useState({
     photoDataUrl: null,
@@ -258,6 +266,7 @@ export default function App() {
   const [toothbrushData, setToothbrushData] = useState([]);
   const [mouthwashData, setMouthwashData] = useState([]);
 
+  // Master Catalog & SKU Ranges (Starts with outlet survey.xlsx data, syncs with Google Sheet if available)
   const [surveyCatalog, setSurveyCatalog] = useState(DEFAULT_SURVEY_CATALOG);
   const [skuSizeRanges, setSkuSizeRanges] = useState(DEFAULT_SKU_SIZE_RANGES);
   const [catalogSource, setCatalogSource] = useState('Excel Built-in');
@@ -651,18 +660,33 @@ export default function App() {
           </div>
         </div>
         
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-1.5 bg-red-800/60 hover:bg-red-800 text-white text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-400/30 transition-all active:scale-95 shadow-sm"
-          title="Sign out"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Logout</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('map')}
+            className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl border transition-all active:scale-95 shadow-sm ${
+              activeTab === 'map'
+                ? 'bg-white text-red-700 border-white'
+                : 'bg-red-800/60 hover:bg-red-800 text-white border-red-400/30'
+            }`}
+            title="Open Daily Route Map"
+          >
+            <MapIcon className="w-3.5 h-3.5" />
+            <span>Map</span>
+          </button>
+
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 bg-red-800/60 hover:bg-red-800 text-white text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-400/30 transition-all active:scale-95 shadow-sm"
+            title="Sign out"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Logout</span>
+          </button>
+        </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-4">
+      <main className="flex-1 overflow-y-auto p-4 space-y-6">
         {activeTab === 'outlet' && (
           <OutletSection 
             data={outletData} 
@@ -672,28 +696,67 @@ export default function App() {
             showModal={showModal}
           />
         )}
+
         {activeTab === 'toothpaste' && (
-          <ProductSection category="toothpaste" title="Toothpaste" data={toothpasteData} setData={setToothpasteData} hasSKU={true} hasQty={true} catalog={surveyCatalog} skuRanges={skuSizeRanges} />
-        )}
-        {activeTab === 'toothbrush' && (
-          <ProductSection category="toothbrush" title="Toothbrush" data={toothbrushData} setData={setToothbrushData} hasSKU={false} hasQty={false} catalog={surveyCatalog} skuRanges={skuSizeRanges} />
-        )}
-        {activeTab === 'mouthwash' && (
-          <ProductSection category="mouthwash" title="Mouthwash" data={mouthwashData} setData={setMouthwashData} hasSKU={false} hasQty={false} catalog={surveyCatalog} skuRanges={skuSizeRanges} />
-        )}
-        {activeTab === 'coverage' && (
-          <CoverageSection internId={currentUser.username} localRecords={userCoveredOutlets} />
-        )}
-        {activeTab === 'map' && (
-          <MapSection internId={currentUser.username} localRecords={userCoveredOutlets} />
+          <ProductSection 
+            category="toothpaste"
+            title="Toothpaste" 
+            data={toothpasteData} 
+            setData={setToothpasteData} 
+            hasSKU={true}
+            hasQty={true}
+            catalog={surveyCatalog}
+            skuRanges={skuSizeRanges}
+          />
         )}
 
-        {['toothpaste', 'toothbrush', 'mouthwash'].includes(activeTab) && (
-          <div className="mt-8 mb-4">
-            <button 
+        {activeTab === 'toothbrush' && (
+          <ProductSection 
+            category="toothbrush"
+            title="Toothbrush" 
+            data={toothbrushData} 
+            setData={setToothbrushData} 
+            hasSKU={false}
+            hasQty={false}
+            catalog={surveyCatalog}
+            skuRanges={skuSizeRanges}
+          />
+        )}
+
+        {activeTab === 'mouthwash' && (
+          <ProductSection 
+            category="mouthwash"
+            title="Mouthwash" 
+            data={mouthwashData} 
+            setData={setMouthwashData} 
+            hasSKU={false}
+            hasQty={false}
+            catalog={surveyCatalog}
+            skuRanges={skuSizeRanges}
+          />
+        )}
+
+        {activeTab === 'coverage' && (
+          <CoveredOutletsSection
+            internId={currentUser.username}
+            localRecords={userCoveredOutlets}
+          />
+        )}
+
+        {activeTab === 'map' && (
+          <MapSection
+            internId={currentUser.username}
+            localRecords={userCoveredOutlets}
+          />
+        )}
+
+        {/* Submit Button available on Product tabs */}
+        {['toothpaste', 'toothbrush', 'mouthwash'].includes(activeTab) && isOutletSaved && (
+          <div className="pt-4 pb-8">
+            <button
               onClick={handleSubmitFinalSurvey}
               disabled={isSubmitting}
-              className="w-full bg-gradient-to-r from-red-600 via-red-600 to-rose-700 text-white py-3.5 rounded-2xl font-bold text-base shadow-lg shadow-red-600/30 hover:from-red-700 hover:to-red-800 flex items-center justify-center gap-2 active:scale-[0.99] transition-all disabled:opacity-60"
+              className="w-full bg-gradient-to-r from-red-600 to-rose-700 text-white p-4 rounded-2xl font-bold shadow-lg shadow-red-600/30 hover:from-red-700 hover:to-rose-800 transition-all active:scale-[0.99] flex items-center justify-center gap-2 text-base disabled:opacity-50"
             >
               {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
               {isSubmitting ? 'Saving to Google Sheet...' : 'Submit Survey Data'}
@@ -702,50 +765,105 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Navigation */}
-      <nav className="bg-white border-t border-gray-200 fixed bottom-0 w-full flex justify-around px-1 py-2 pb-safe z-20 shadow-[0_-4px_15px_rgba(0,0,0,0.06)]">
-        <NavButton id="outlet" icon={MapPin} label="Outlet" current={activeTab} setTab={setActiveTab} />
-        <NavButton id="toothpaste" icon={ClipboardList} label="Toothpaste" current={activeTab} setTab={setActiveTab} disabled={!isOutletSaved} />
-        <NavButton id="toothbrush" icon={ClipboardList} label="Toothbrush" current={activeTab} setTab={setActiveTab} disabled={!isOutletSaved} />
-        <NavButton id="mouthwash" icon={ClipboardList} label="Mouthwash" current={activeTab} setTab={setActiveTab} disabled={!isOutletSaved} />
-        <NavButton id="coverage" icon={CheckSquare} label="Coverage" current={activeTab} setTab={setActiveTab} />
-        <NavButton id="map" icon={MapIcon} label="Route Map" current={activeTab} setTab={setActiveTab} />
+      {/* Bottom Navigation Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around p-1.5 shadow-[0_-4px_15px_rgba(0,0,0,0.04)] z-20">
+        {[
+          { id: 'outlet', label: 'Outlet', icon: MapPin, locked: false },
+          { id: 'toothpaste', label: 'Toothpaste', icon: ClipboardList, locked: !isOutletSaved },
+          { id: 'toothbrush', label: 'Toothbrush', icon: ClipboardList, locked: !isOutletSaved },
+          { id: 'mouthwash', label: 'Mouthwash', icon: ClipboardList, locked: !isOutletSaved },
+          {
+            id: 'coverage',
+            label: 'Coverage',
+            icon: CheckSquare,
+            locked: false,
+            badgeCount: userCoveredOutlets.length
+          },
+          { id: 'map', label: 'Route Map', icon: MapIcon, locked: false }
+        ].map((tab) => {
+          const IconComponent = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                if (tab.locked) {
+                  showModal(
+                    'Section Locked',
+                    'Please take a live signboard photo and complete the Outlet Details on the first page to unlock the product survey tabs.',
+                    'warning'
+                  );
+                } else {
+                  setActiveTab(tab.id);
+                }
+              }}
+              className={`relative flex flex-col items-center p-1.5 rounded-xl flex-1 transition-all ${
+                isActive
+                  ? 'text-red-600 bg-red-50/90 font-bold'
+                  : tab.locked
+                  ? 'text-gray-300'
+                  : 'text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              <div className="relative">
+                <IconComponent className={`w-5 h-5 ${isActive ? 'text-red-600' : ''}`} />
+                {tab.locked && (
+                  <Lock className="w-3 h-3 text-red-500 absolute -top-1 -right-1.5 bg-white rounded-full p-0.5 shadow" />
+                )}
+                {!tab.locked && typeof tab.badgeCount === 'number' && tab.badgeCount > 0 && (
+                  <span className="absolute -top-1.5 -right-2.5 bg-red-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full shadow">
+                    {tab.badgeCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] mt-1 tracking-tight">{tab.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
-      <Modal {...modal} onClose={() => setModal({ ...modal, isOpen: false })} />
+      {/* Global Notification Modal */}
+      <Modal 
+        isOpen={modal.isOpen} 
+        title={modal.title} 
+        message={modal.message} 
+        type={modal.type} 
+        onClose={() => setModal({ ...modal, isOpen: false })} 
+      />
     </div>
   );
 }
 
 // ============================================================================
-// 6. ADMIN PANEL COMPONENT (Dashboard, Intern Route Tracker, Users Sheet)
+// 6. ADMIN DASHBOARD COMPONENT
 // ============================================================================
-const AdminDashboard = ({ currentUser, onLogout, adminTab, setAdminTab, localOutlets, catalog, skuRanges, catalogSource }) => {
-  const todayStr = getLocalDateString(0);
-  const [selectedDate, setSelectedDate] = useState(todayStr);
+const AdminDashboard = ({
+  currentUser,
+  onLogout,
+  adminTab,
+  setAdminTab,
+  localOutlets,
+  catalog,
+  skuRanges,
+  catalogSource
+}) => {
+  const [remoteOutlets, setRemoteOutlets] = useState(null);
+  const [remoteUsers, setRemoteUsers] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(getLocalDateString(0));
   const [selectedIntern, setSelectedIntern] = useState('USR-015');
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const [remoteOutlets, setRemoteOutlets] = useState(null);
-  const [remoteUsers, setRemoteUsers] = useState(null);
-
-  const fetchAdminData = async () => {
+  const fetchAdminData = () => {
     if (!GOOGLE_SCRIPT_URL) return;
     setIsSyncing(true);
-    try {
-      const res = await fetch(`${GOOGLE_SCRIPT_URL}?type=admin_data`);
-      const json = await res.json();
-      if (Array.isArray(json.outlets)) {
-        setRemoteOutlets(json.outlets);
-      }
-      if (Array.isArray(json.users)) {
-        setRemoteUsers(json.users);
-      }
-    } catch (err) {
-      console.warn('Admin sync failed:', err);
-    } finally {
-      setIsSyncing(false);
-    }
+    fetch(`${GOOGLE_SCRIPT_URL}?type=admin_data`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (Array.isArray(json.outlets)) setRemoteOutlets(json.outlets);
+        if (Array.isArray(json.users)) setRemoteUsers(json.users);
+      })
+      .catch(() => {})
+      .finally(() => setIsSyncing(false));
   };
 
   useEffect(() => {
@@ -754,13 +872,15 @@ const AdminDashboard = ({ currentUser, onLogout, adminTab, setAdminTab, localOut
 
   const allOutlets = remoteOutlets !== null ? remoteOutlets : localOutlets;
   const usersList = remoteUsers !== null ? remoteUsers : FALLBACK_USERS;
-  const internAccounts = usersList.filter((u) => (u.userType || '').toLowerCase() === 'intern');
+  const internAccounts = usersList.filter(
+    (u) => (u.userType || 'intern').toLowerCase() === 'intern'
+  );
 
+  const todayStr = getLocalDateString(0);
+  const todayOutletsCount = allOutlets.filter((o) => o.date === todayStr).length;
   const dateFilteredOutlets = selectedDate
     ? allOutlets.filter((o) => o.date === selectedDate)
     : allOutlets;
-
-  const todayOutletsCount = allOutlets.filter((o) => o.date === todayStr).length;
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans pb-20">
@@ -771,19 +891,26 @@ const AdminDashboard = ({ currentUser, onLogout, adminTab, setAdminTab, localOut
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-extrabold tracking-tight leading-tight">Admin Control Panel</h1>
-              <span className="bg-red-500/30 border border-red-300/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                {currentUser.username}
-              </span>
-            </div>
+            <h1 className="text-base font-extrabold tracking-tight leading-tight">Admin Control Panel</h1>
             <p className="text-red-100 text-[11px] font-medium">
-              60k Retail Census Monitor • {GOOGLE_SCRIPT_URL ? 'Live Google Sheet' : 'Local Preview'}
+              {currentUser.fullName} ({currentUser.username}) • {GOOGLE_SCRIPT_URL ? 'Google Sheet Live' : 'Preview Mode'}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAdminTab('routes')}
+            className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl border transition-all ${
+              adminTab === 'routes'
+                ? 'bg-white text-red-700 border-white'
+                : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+            }`}
+            title="Track Intern Routes on Map"
+          >
+            <MapIcon className="w-3.5 h-3.5" />
+            <span>Map</span>
+          </button>
           {GOOGLE_SCRIPT_URL && (
             <button
               onClick={fetchAdminData}
@@ -846,12 +973,12 @@ const AdminDashboard = ({ currentUser, onLogout, adminTab, setAdminTab, localOut
                     type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-2.5 py-1 text-xs font-bold text-gray-800 bg-gray-50"
+                    className="border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-gray-50"
                   />
                   {selectedDate && (
                     <button
                       onClick={() => setSelectedDate('')}
-                      className="text-[11px] font-bold text-red-600 hover:underline"
+                      className="text-xs font-bold text-red-600 hover:underline"
                     >
                       All
                     </button>
@@ -859,19 +986,25 @@ const AdminDashboard = ({ currentUser, onLogout, adminTab, setAdminTab, localOut
                 </div>
               </div>
 
-              <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+              <div className="divide-y divide-gray-100">
                 {internAccounts.map((intern) => {
                   const count = dateFilteredOutlets.filter(
-                    (o) => o.internId === intern.username
+                    (o) => (o.internId || '').toLowerCase() === intern.username.toLowerCase()
                   ).length;
                   return (
                     <div key={intern.username} className="py-2.5 flex items-center justify-between">
                       <div>
                         <span className="text-xs font-bold text-gray-900">{intern.username}</span>
-                        <span className="text-xs text-gray-500 ml-2">({intern.fullName})</span>
+                        <span className="text-xs text-gray-500 ml-2">{intern.fullName}</span>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-black px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-black px-2.5 py-1 rounded-full ${
+                            count > 0
+                              ? 'bg-red-50 text-red-700 border border-red-200'
+                              : 'bg-gray-100 text-gray-500'
+                          }`}
+                        >
                           {count} {count === 1 ? 'outlet' : 'outlets'}
                         </span>
                         <button
@@ -1017,7 +1150,7 @@ const AdminDashboard = ({ currentUser, onLogout, adminTab, setAdminTab, localOut
           </div>
         )}
 
-        {/* TAB 4: COMPANY, BRAND & SKU MASTER LISTS */}
+        {/* TAB 4: COMPANY, BRAND & SKU MASTER LISTS (From Excel / Google Sheet) */}
         {adminTab === 'catalog' && (
           <div className="space-y-4">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
@@ -1030,7 +1163,7 @@ const AdminDashboard = ({ currentUser, onLogout, adminTab, setAdminTab, localOut
                 </span>
               </div>
               <p className="text-xs text-gray-500">
-                All companies, brands, and SKU ranges from your Excel file are pre-loaded in the app. You can also manage them in the <strong>Catalog</strong> & <strong>SKU_Ranges</strong> tabs of your Google Sheet.
+                All companies, brands, and SKU ranges from your Excel file are pre-loaded in the app. You can also edit them anytime in the <strong>Catalog</strong> & <strong>SKU_Ranges</strong> tabs of your Google Sheet.
               </p>
 
               <div className="mt-4 pt-3 border-t border-gray-100">
@@ -1050,15 +1183,21 @@ const AdminDashboard = ({ currentUser, onLogout, adminTab, setAdminTab, localOut
             {['toothpaste', 'toothbrush', 'mouthwash'].map((cat) => {
               const catMap = catalog[cat] || {};
               return (
-                <div key={cat} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-2.5">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-red-600">
-                    {cat} Companies & Brands ({Object.keys(catMap).length} companies)
+                <div key={cat} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-gray-800">
+                    {cat} Companies & Brands ({Object.keys(catMap).length})
                   </h3>
                   <div className="divide-y divide-gray-100">
                     {Object.entries(catMap).map(([comp, brands]) => (
-                      <div key={comp} className="py-2">
-                        <span className="text-xs font-bold text-gray-900 block">{comp}</span>
-                        <span className="text-[11px] text-gray-500">{brands.join(', ')}</span>
+                      <div key={comp} className="py-2.5">
+                        <span className="text-xs font-bold text-gray-900 block mb-1">{comp}</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(brands || []).map((b) => (
+                            <span key={b} className="px-2 py-0.5 rounded-md text-[11px] bg-slate-100 text-slate-700 font-medium">
+                              {b}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1070,46 +1209,37 @@ const AdminDashboard = ({ currentUser, onLogout, adminTab, setAdminTab, localOut
       </main>
 
       {/* Admin Bottom Navigation */}
-      <nav className="bg-white border-t border-gray-200 fixed bottom-0 w-full flex justify-around px-2 py-2 pb-safe z-20 shadow-[0_-4px_15px_rgba(0,0,0,0.06)]">
-        <NavButton id="dashboard" icon={BarChart3} label="Dashboard" current={adminTab} setTab={setAdminTab} />
-        <NavButton id="routes" icon={MapIcon} label="Intern Routes" current={adminTab} setTab={setAdminTab} />
-        <NavButton id="users" icon={Users} label="Users Sheet" current={adminTab} setTab={setAdminTab} />
-        <NavButton id="catalog" icon={Layers} label="Catalog" current={adminTab} setTab={setAdminTab} />
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around p-1.5 shadow-[0_-4px_15px_rgba(0,0,0,0.04)] z-20">
+        {[
+          { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+          { id: 'routes', label: 'Intern Routes', icon: MapIcon },
+          { id: 'users', label: 'Users Sheet', icon: Users },
+          { id: 'catalog', label: 'Catalog', icon: Layers }
+        ].map((tab) => {
+          const IconComponent = tab.icon;
+          const isActive = adminTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setAdminTab(tab.id)}
+              className={`flex flex-col items-center p-1.5 rounded-xl flex-1 transition-all ${
+                isActive ? 'text-red-600 bg-red-50 font-bold' : 'text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              <IconComponent className={`w-5 h-5 ${isActive ? 'text-red-600' : ''}`} />
+              <span className="text-[10px] mt-1 tracking-tight">{tab.label}</span>
+            </button>
+          );
+        })}
       </nav>
     </div>
   );
 };
 
 // ============================================================================
-// 7. NAVIGATION BUTTON COMPONENT
+// 7. COVERED OUTLETS SECTION (With Date Filter & Google Sheet Sync)
 // ============================================================================
-const NavButton = ({ id, icon: Icon, label, current, setTab, disabled }) => {
-  const isActive = current === id;
-  return (
-    <button 
-      onClick={() => !disabled && setTab(id)}
-      className={`flex flex-col items-center py-1.5 px-1 flex-1 min-w-0 transition-colors relative
-        ${isActive ? 'text-red-600 font-bold' : 'text-gray-400 font-medium'}
-        ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:text-red-500'}
-      `}
-      disabled={disabled}
-      title={disabled ? "Complete and lock Outlet details first" : label}
-    >
-      <div className="relative">
-        <Icon className={`w-5 h-5 mb-1 ${isActive ? 'stroke-[2.5]' : ''}`} />
-        {disabled && (
-          <Lock className="w-2.5 h-2.5 text-gray-500 absolute -top-1 -right-1.5" />
-        )}
-      </div>
-      <span className="text-[10px] tracking-tight truncate max-w-full">{label}</span>
-    </button>
-  );
-};
-
-// ============================================================================
-// 8. COVERED OUTLETS SECTION (Date-Filterable Progress Tracker for Interns)
-// ============================================================================
-const CoverageSection = ({ internId, localRecords }) => {
+const CoveredOutletsSection = ({ internId, localRecords }) => {
   const todayStr = getLocalDateString(0);
   const yesterdayStr = getLocalDateString(-1);
 
@@ -1118,42 +1248,26 @@ const CoverageSection = ({ internId, localRecords }) => {
   const [remoteRecords, setRemoteRecords] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const fetchFromGoogleSheet = async () => {
+  const fetchCoverageFromSheet = () => {
     if (!GOOGLE_SCRIPT_URL) return;
     setIsSyncing(true);
-    try {
-      const url = `${GOOGLE_SCRIPT_URL}?type=coverage&internId=${encodeURIComponent(internId)}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (Array.isArray(json.outlets)) {
-        setRemoteRecords(
-          json.outlets.map((o) => ({
-            outletId: o.outletId,
-            internId,
-            outletName: o.outletName,
-            outletType: o.outletType,
-            address: o.address || 'GPS Verified Location',
-            date: o.date,
-            time: o.time,
-            companiesCount: o.companiesCount || null
-          }))
-        );
-      }
-    } catch (err) {
-      console.warn('Could not sync coverage from Google Sheet:', err);
-    } finally {
-      setIsSyncing(false);
-    }
+    const url = `${GOOGLE_SCRIPT_URL}?type=coverage&internId=${encodeURIComponent(internId)}`;
+    fetch(url)
+      .then((res) => res.json())
+      .then((json) => {
+        if (Array.isArray(json.outlets)) {
+          setRemoteRecords(json.outlets);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsSyncing(false));
   };
 
   useEffect(() => {
-    fetchFromGoogleSheet();
+    fetchCoverageFromSheet();
   }, [internId]);
 
   const records = remoteRecords !== null ? remoteRecords : localRecords;
-  const todayCount = records.filter((r) => r.date === todayStr).length;
-  const totalCount = records.length;
-
   const activeDateTarget =
     filterMode === 'today'
       ? todayStr
@@ -1164,8 +1278,11 @@ const CoverageSection = ({ internId, localRecords }) => {
       : null;
 
   const filteredRecords = activeDateTarget
-    ? records.filter((r) => r.date === activeDateTarget)
+    ? records.filter((item) => item.date === activeDateTarget)
     : records;
+
+  const todayCount = records.filter((item) => item.date === todayStr).length;
+  const totalCount = records.length;
 
   const handleDatePickerChange = (e) => {
     const val = e.target.value;
@@ -1177,18 +1294,19 @@ const CoverageSection = ({ internId, localRecords }) => {
 
   return (
     <div className="space-y-5 pb-6">
+      {/* Summary Header Card */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
-            <CheckSquare className="w-5 h-5 text-red-600" /> Covered Outlets
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-black text-gray-800 flex items-center gap-2">
+            <CheckSquare className="text-red-600 w-5 h-5" /> Covered Outlets
           </h2>
           <div className="flex items-center gap-2">
             {GOOGLE_SCRIPT_URL && (
               <button
                 type="button"
-                onClick={fetchFromGoogleSheet}
+                onClick={fetchCoverageFromSheet}
                 disabled={isSyncing}
-                className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700"
+                className="p-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
                 title="Refresh from Google Sheet"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-red-600' : ''}`} />
@@ -1366,7 +1484,7 @@ const CoverageSection = ({ internId, localRecords }) => {
 };
 
 // ============================================================================
-// 9. OUTLET SECTION COMPONENT (With Client-Side 800px Image Compression)
+// 8. OUTLET SECTION COMPONENT (With Client-Side 800px Image Compression)
 // ============================================================================
 const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -1721,7 +1839,8 @@ const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
 };
 
 // ============================================================================
-// 10. PRODUCT SECTION COMPONENT (Toothpaste, Toothbrush, Mouthwash)
+// 9. PRODUCT SECTION COMPONENT (Toothpaste, Toothbrush, Mouthwash)
+// ============================================================================
 const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalog, skuRanges }) => {
   const categoryCatalog = (catalog && catalog[category]) || DEFAULT_SURVEY_CATALOG[category] || {};
   const activeSkuRanges = skuRanges || DEFAULT_SKU_SIZE_RANGES;
@@ -2071,7 +2190,7 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
 };
 
 // ============================================================================
-// 11. DAILY ROUTE MAP SECTION (100% Free OpenStreetMap + Circle + Distance)
+// 10. DAILY ROUTE MAP SECTION (100% Free OpenStreetMap + Circle + Distance)
 // ============================================================================
 const MapSection = ({ internId, localRecords }) => {
   const mapContainerRef = useRef(null);
@@ -2163,9 +2282,9 @@ const MapSection = ({ internId, localRecords }) => {
     }).setView([avgLat, avgLng], 15);
     mapInstanceRef.current = map;
 
-    window.L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '© OpenStreetMap © CARTO'
+      attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
     if (coords.length > 1) {
