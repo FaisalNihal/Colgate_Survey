@@ -28,93 +28,89 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// 1. PRODUCTION CONFIGURATION
+// 1. CONFIGURATION (Paste your Google Apps Script Web App URL below)
 // ============================================================================
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzQSOfhWskkHlwuYvyD90KoPPBqDJFohe-6UA_B3PSreFR2pBNBt8QYHIUc8Org10LjuQ/exec';
 const GEMINI_API_KEY = '';
 
+// Fallback accounts used ONLY when GOOGLE_SCRIPT_URL is blank (Preview Mode).
+// Once GOOGLE_SCRIPT_URL is set, logins verify directly against your Google Sheet "Users" tab.
 const FALLBACK_USERS = [
   { username: 'admin', fullName: 'Survey Supervisor', userType: 'admin', password: 'admin123' },
-  ...Array.from({ length: 15 }, (_, idx) => {
-    const num = String(idx + 1).padStart(2, '0');
-    return {
-      username: `USR-${num}`,
-      fullName: `Field Intern ${num}`,
-      userType: 'intern',
-      password: `colgate${num}`
-    };
-  })
+  { username: 'USR-001', fullName: 'Intern 01', userType: 'intern', password: 'colgate01' },
+  { username: 'USR-002', fullName: 'Intern 02', userType: 'intern', password: 'colgate02' },
+  { username: 'USR-003', fullName: 'Intern 03', userType: 'intern', password: 'colgate03' },
+  { username: 'USR-004', fullName: 'Intern 04', userType: 'intern', password: 'colgate04' },
+  { username: 'USR-005', fullName: 'Intern 05', userType: 'intern', password: 'colgate05' },
+  { username: 'USR-006', fullName: 'Intern 06', userType: 'intern', password: 'colgate06' },
+  { username: 'USR-007', fullName: 'Intern 07', userType: 'intern', password: 'colgate07' },
+  { username: 'USR-008', fullName: 'Intern 08', userType: 'intern', password: 'colgate08' },
+  { username: 'USR-009', fullName: 'Intern 09', userType: 'intern', password: 'colgate09' },
+  { username: 'USR-010', fullName: 'Intern 10', userType: 'intern', password: 'colgate10' },
+  { username: 'USR-011', fullName: 'Intern 11', userType: 'intern', password: 'colgate11' },
+  { username: 'USR-012', fullName: 'Intern 12', userType: 'intern', password: 'colgate12' },
+  { username: 'USR-013', fullName: 'Intern 13', userType: 'intern', password: 'colgate13' },
+  { username: 'USR-014', fullName: 'Intern 14', userType: 'intern', password: 'colgate14' },
+  { username: 'USR-015', fullName: 'Intern 15', userType: 'intern', password: 'colgate15' }
 ];
 
 // ============================================================================
-// 2. PRODUCT CATALOG & SKU RANGES (Embedded from outlet survey.xlsx + Sheet Sync)
+// 2. COMPLETE COMPANY & BRAND LIST + SKU RANGES (From outlet survey_2.xlsx)
 // ============================================================================
+const DEFAULT_COMPANY_BRANDS = {
+  'Colgate-Palmolive': [
+    'Colgate Strong Teeth',
+    'Colgate MaxFresh',
+    'Colgate Visible White',
+    'Colgate Active Salt',
+    'Colgate Sensitive',
+    'Colgate Total',
+    'Colgate Herbal',
+    'Colgate Cibaca',
+    'Colgate Kids',
+    'Colgate ZigZag',
+    'Colgate Super Flexi',
+    'Colgate SlimSoft',
+    'Colgate Extra Clean',
+    'Colgate 360',
+    'Colgate Plax'
+  ],
+  'Unilever': ['Pepsodent', 'CloseUp', 'Lever Ayush'],
+  'Square Toiletries': ['White Plus', 'Magic'],
+  'ACI': ['ACI Neem', 'ACI Herbal'],
+  'Kohinoor Chemical': ['Tibet'],
+  'Keya Cosmetics': ['Keya'],
+  'Anfords': ['Anfords'],
+  'Dabur': ['Dabur Red', 'Dabur Meswak', 'Dabur Babool', 'Dabur Herbal'],
+  'Haleon (GSK)': ['Sensodyne', 'Parodontax', 'Aquafresh'],
+  'Procter & Gamble': ['Oral-B', 'Crest'],
+  'Johnson & Johnson': ['Listerine'],
+  'Himalaya': ['Himalaya Complete Care', 'Himalaya Sparkling White', 'Himalaya Herbals'],
+  'Hawley & Hazel': ['Darlie'],
+  'Reckitt': ['Dettol'],
+  'Marico': ['Mediker'],
+  'Matador': ['Matador'],
+  'RFL': ['RFL'],
+  'Fresh': ['Fresh'],
+  'Jordan': ['Jordan'],
+  'Trisa': ['Trisa'],
+  'Wisdom': ['Wisdom'],
+  'Patanjali': ['Dant Kanti'],
+  'Vicco': ['Vicco Vajradanti'],
+  'Amway': ['Glister'],
+  'Forever Living': ['Forever Bright'],
+  'DXN': ['Ganozhi'],
+  'Atomy': ['Atomy Toothpaste'],
+  'LION': ['Systema'],
+  'Sunstar': ['GUM'],
+  'KAO': ['Guard Halo'],
+  'Church & Dwight': ['Arm & Hammer']
+};
+
 const DEFAULT_SURVEY_CATALOG = {
-  toothpaste: {
-    'Colgate': [
-      'Colgate Strong Teeth',
-      'Colgate MaxFresh',
-      'Colgate Visible White',
-      'Colgate Active Salt',
-      'Colgate Sensitive Plus',
-      'Colgate Total',
-      'Colgate Herbal',
-      'Colgate Kids',
-      'Colgate Vedshakti',
-      'Colgate Charcoal Clean'
-    ],
-    'Unilever': ['Pepsodent', 'CloseUp', 'Lever Ayush'],
-    'Square Toiletries': ['White Plus', 'Magic Toothpowder'],
-    'ACI': ['ACI Neem', 'ACI Herbal'],
-    'Kohinoor Chemical': ['Tibet Toothpaste', 'Tibet Toothpowder'],
-    'Keya Cosmetics': ['Keya Toothpaste'],
-    'Dabur': ['Dabur Red', 'Meswak', 'Babool', 'Dabur Herbal'],
-    'Haleon (GSK)': ['Sensodyne', 'Parodontax'],
-    'Procter & Gamble': ['Oral-B Toothpaste', 'Crest'],
-    'Himalaya': ['Himalaya Complete Care', 'Himalaya Sparkling White', 'Himalaya Herbals'],
-    'Marico': ['Mediker'],
-    'Imported / Others': ['Darlie', 'Aquafresh', 'Signal', 'Amway Glister']
-  },
-  toothbrush: {
-    'Colgate': [
-      'Colgate Super Flexi',
-      'Colgate ZigZag',
-      'Colgate SlimSoft',
-      'Colgate Extra Clean',
-      'Colgate Gentle',
-      'Colgate 360°',
-      'Colgate Kids'
-    ],
-    'Unilever': ['Pepsodent Toothbrush', 'CloseUp Toothbrush'],
-    'Square Toiletries': ['White Plus Toothbrush'],
-    'ACI': ['ACI Toothbrush'],
-    'Dabur': ['Dabur Toothbrush'],
-    'Haleon (GSK)': ['Sensodyne Toothbrush'],
-    'Procter & Gamble': ['Oral-B'],
-    'Imported / Others': [
-      'Jordan',
-      'Trisa',
-      'Wisdom',
-      'Matador Toothbrush',
-      'RFL Toothbrush',
-      'Fresh Toothbrush'
-    ]
-  },
-  mouthwash: {
-    'Colgate': [
-      'Colgate Plax Peppermint',
-      'Colgate Plax Fresh Tea',
-      'Colgate Plax Sensitive',
-      'Colgate Total Mouthwash',
-      'Colgate Plax Complete Care'
-    ],
-    'Unilever': ['Pepsodent Mouthwash', 'CloseUp Mouthwash'],
-    'Haleon (GSK)': ['Sensodyne Mouthwash'],
-    'Procter & Gamble': ['Oral-B Mouthwash'],
-    'Johnson & Johnson': ['Listerine'],
-    'Reckitt': ['Dettol Mouthwash'],
-    'Imported / Others': ['Betadine', 'Hexisol']
-  }
+  toothpaste: DEFAULT_COMPANY_BRANDS,
+  toothbrush: DEFAULT_COMPANY_BRANDS,
+  mouthwash: DEFAULT_COMPANY_BRANDS
 };
 
 const DEFAULT_SKU_SIZE_RANGES = [
@@ -248,10 +244,8 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('dashboard');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Modal State
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
-  // Covered Outlets History State
   const [coveredOutlets, setCoveredOutlets] = useState(() => {
     try {
       const saved = localStorage.getItem('colgate_covered_outlets_v1');
@@ -270,7 +264,6 @@ export default function App() {
     }
   }, [coveredOutlets]);
 
-  // Survey Data State
   const [outletData, setOutletData] = useState({
     photoDataUrl: null,
     name: '',
@@ -286,33 +279,58 @@ export default function App() {
   const [toothbrushData, setToothbrushData] = useState([]);
   const [mouthwashData, setMouthwashData] = useState([]);
 
-  // Master Catalog & SKU Ranges (Starts with outlet survey.xlsx data, syncs with Google Sheet if available)
+  // Master Catalog & SKU Ranges (Starts with outlet survey_2.xlsx data, syncs with Google Sheet if available)
   const [surveyCatalog, setSurveyCatalog] = useState(DEFAULT_SURVEY_CATALOG);
   const [skuSizeRanges, setSkuSizeRanges] = useState(DEFAULT_SKU_SIZE_RANGES);
-  const [catalogSource, setCatalogSource] = useState('Excel Built-in');
+  const [catalogSource, setCatalogSource] = useState(
+    GOOGLE_SCRIPT_URL ? 'Syncing Google Sheet...' : 'Excel Built-in'
+  );
 
-  useEffect(() => {
+  const fetchCatalogFromSheet = () => {
     if (!GOOGLE_SCRIPT_URL) return;
     fetch(`${GOOGLE_SCRIPT_URL}?type=catalog`)
       .then((res) => res.json())
       .then((json) => {
-        if (json.catalog && Object.keys(json.catalog).length > 0) {
-          setSurveyCatalog((prev) => ({
-            toothpaste: Object.keys(json.catalog.toothpaste || {}).length > 0 ? json.catalog.toothpaste : prev.toothpaste,
-            toothbrush: Object.keys(json.catalog.toothbrush || {}).length > 0 ? json.catalog.toothbrush : prev.toothbrush,
-            mouthwash: Object.keys(json.catalog.mouthwash || {}).length > 0 ? json.catalog.mouthwash : prev.mouthwash
-          }));
-          setCatalogSource('Google Sheet Synced');
+        if (json.hasSheetCatalog && json.catalog) {
+          setSurveyCatalog({
+            toothpaste: json.catalog.toothpaste || {},
+            toothbrush: json.catalog.toothbrush || {},
+            mouthwash: json.catalog.mouthwash || {}
+          });
+          setCatalogSource(
+            json.catalogSheetName
+              ? `Google Sheet (${json.catalogSheetName})`
+              : 'Google Sheet Synced'
+          );
+        } else if (json.catalog) {
+          const hasAny =
+            Object.keys(json.catalog.toothpaste || {}).length > 0 ||
+            Object.keys(json.catalog.toothbrush || {}).length > 0 ||
+            Object.keys(json.catalog.mouthwash || {}).length > 0;
+          if (hasAny) {
+            setSurveyCatalog({
+              toothpaste: json.catalog.toothpaste || {},
+              toothbrush: json.catalog.toothbrush || {},
+              mouthwash: json.catalog.mouthwash || {}
+            });
+            setCatalogSource('Google Sheet Synced');
+          }
         }
         if (Array.isArray(json.skuRanges) && json.skuRanges.length > 0) {
           setSkuSizeRanges(json.skuRanges);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setCatalogSource('Excel Built-in (Offline Fallback)');
+      });
+  };
+
+  useEffect(() => {
+    fetchCatalogFromSheet();
   }, []);
 
   useEffect(() => {
-    if (!currentUser || currentUser.userType !== 'intern' || !GOOGLE_SCRIPT_URL) return;
+    if (!currentUser || currentUser.userType === 'admin' || !GOOGLE_SCRIPT_URL) return;
 
     const sendGpsHeartbeat = () => {
       if (!navigator.geolocation) return;
@@ -343,7 +361,6 @@ export default function App() {
     setModal({ isOpen: true, title, message, type });
   };
 
-  // Authenticate against Google Sheet "Users" tab (with fallback for offline/preview)
   const handleLogin = async (e) => {
     e.preventDefault();
     const cleanUser = usernameInput.trim();
@@ -358,7 +375,6 @@ export default function App() {
     setIsLoggingIn(true);
 
     try {
-      // 1. Live Google Sheet "Users" Tab Verification
       if (GOOGLE_SCRIPT_URL) {
         const loginUrl = `${GOOGLE_SCRIPT_URL}?type=login&username=${encodeURIComponent(cleanUser)}&password=${encodeURIComponent(cleanPass)}`;
         const response = await fetch(loginUrl);
@@ -381,7 +397,6 @@ export default function App() {
         }
       }
 
-      // 2. Local Preview / Fallback Check (when GOOGLE_SCRIPT_URL is empty)
       const matched = FALLBACK_USERS.find(
         (u) => u.username.toLowerCase() === cleanUser.toLowerCase() && u.password === cleanPass
       );
@@ -415,7 +430,6 @@ export default function App() {
     setAdminTab('dashboard');
   };
 
-  // STRICT VALIDATION: Photo and mandatory fields must be completed
   const handleSaveOutlet = () => {
     if (!outletData.photoDataUrl) {
       showModal(
@@ -503,7 +517,7 @@ export default function App() {
         ...normalizedToothpaste,
         ...normalizedToothbrush,
         ...normalizedMouthwash
-      ].some((p) => p.company === 'Colgate');
+      ].some((p) => p.company === 'Colgate' || p.company === 'Colgate-Palmolive');
 
       const newCoveredRecord = {
         outletId: `OUT-${Date.now()}`,
@@ -570,7 +584,6 @@ export default function App() {
             <p className="text-xs text-red-700/80 font-medium tracking-wide mt-1">Colgate Retail Visibility Audit</p>
           </div>
 
-          {/* Role Switcher: Intern Login vs Admin Login */}
           <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl mb-5">
             <button
               type="button"
@@ -658,7 +671,7 @@ export default function App() {
   }
 
   // ==========================================================================
-  // VIEW B: ADMIN PANEL (When logged in user has userType === 'admin')
+  // VIEW B: ADMIN PANEL
   // ==========================================================================
   if (currentUser.userType === 'admin') {
     return (
@@ -671,12 +684,13 @@ export default function App() {
         catalog={surveyCatalog}
         skuRanges={skuSizeRanges}
         catalogSource={catalogSource}
+        onRefreshCatalog={fetchCatalogFromSheet}
       />
     );
   }
 
   // ==========================================================================
-  // VIEW C: INTERN SURVEY APP (When logged in user has userType === 'intern')
+  // VIEW C: INTERN SURVEY APP
   // ==========================================================================
   const userCoveredOutlets = coveredOutlets.filter((item) =>
     sameId(item.internId, currentUser.username)
@@ -684,7 +698,6 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans pb-20">
-      {/* Header */}
       <header className="bg-gradient-to-r from-red-700 via-red-600 to-rose-600 text-white px-4 py-3.5 shadow-md z-10 sticky top-0 flex items-center justify-between border-b border-red-800/40">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 bg-white text-red-600 rounded-xl flex items-center justify-center font-black text-sm shadow-sm">
@@ -723,7 +736,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto p-4 space-y-6">
         {activeTab === 'outlet' && (
           <OutletSection 
@@ -788,7 +800,6 @@ export default function App() {
           />
         )}
 
-        {/* Submit Button available on Product tabs */}
         {['toothpaste', 'toothbrush', 'mouthwash'].includes(activeTab) && isOutletSaved && (
           <div className="pt-4 pb-8">
             <button
@@ -803,7 +814,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Navigation Bar */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around p-1.5 shadow-[0_-4px_15px_rgba(0,0,0,0.04)] z-20">
         {[
           { id: 'outlet', label: 'Outlet', icon: MapPin, locked: false },
@@ -860,7 +870,6 @@ export default function App() {
         })}
       </nav>
 
-      {/* Global Notification Modal */}
       <Modal 
         isOpen={modal.isOpen} 
         title={modal.title} 
@@ -883,13 +892,14 @@ const AdminDashboard = ({
   localOutlets,
   catalog,
   skuRanges,
-  catalogSource
+  catalogSource,
+  onRefreshCatalog
 }) => {
   const [remoteOutlets, setRemoteOutlets] = useState(null);
   const [remoteUsers, setRemoteUsers] = useState(null);
   const [selectedDate, setSelectedDate] = useState(getLocalDateString(0));
   const [outletInternFilter, setOutletInternFilter] = useState('ALL');
-  const [selectedIntern, setSelectedIntern] = useState('USR-001');
+  const [selectedIntern, setSelectedIntern] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
 
   const fetchAdminData = () => {
@@ -923,9 +933,10 @@ const AdminDashboard = ({
     date: normalizeDateString(o.date)
   }));
 
-  // Merge fallback users + Google Sheet Users + any intern IDs present in submitted outlets so the list is never empty
   const mergedUsersMap = new Map();
-  FALLBACK_USERS.forEach((u) => mergedUsersMap.set(u.username.toLowerCase(), u));
+  if (!GOOGLE_SCRIPT_URL) {
+    FALLBACK_USERS.forEach((u) => mergedUsersMap.set(u.username.toLowerCase(), u));
+  }
   if (Array.isArray(remoteUsers)) {
     remoteUsers.forEach((u) => {
       if (u.username) {
@@ -941,7 +952,7 @@ const AdminDashboard = ({
     if (id && !mergedUsersMap.has(id.toLowerCase())) {
       mergedUsersMap.set(id.toLowerCase(), {
         username: id,
-        fullName: `Field Intern (${id})`,
+        fullName: `Field User (${id})`,
         userType: 'intern',
         password: ''
       });
@@ -950,14 +961,23 @@ const AdminDashboard = ({
 
   const usersList = Array.from(mergedUsersMap.values());
   const internAccounts = usersList.filter(
-    (u) => (u.userType || 'intern').toLowerCase() === 'intern'
+    (u) => (u.userType || '').trim().toLowerCase() !== 'admin'
   );
 
+  const internKeyString = internAccounts.map((u) => u.username).join('|');
   useEffect(() => {
-    if (internAccounts.length > 0 && !internAccounts.some((u) => sameId(u.username, selectedIntern))) {
+    if (
+      internAccounts.length > 0 &&
+      (!selectedIntern || !internAccounts.some((u) => sameId(u.username, selectedIntern)))
+    ) {
       setSelectedIntern(internAccounts[0].username);
     }
-  }, [internAccounts.length]);
+  }, [internKeyString, selectedIntern]);
+
+  const activeRouteIntern =
+    selectedIntern && internAccounts.some((u) => sameId(u.username, selectedIntern))
+      ? selectedIntern
+      : internAccounts[0]?.username || '';
 
   const todayStr = getLocalDateString(0);
   const todayOutletsCount = allOutlets.filter((o) => o.date === todayStr).length;
@@ -973,7 +993,6 @@ const AdminDashboard = ({
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans pb-20">
-      {/* Admin Header */}
       <header className="bg-gradient-to-r from-slate-900 via-red-900 to-red-700 text-white px-4 py-3.5 shadow-md z-10 sticky top-0 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 bg-white text-red-600 rounded-xl flex items-center justify-center font-black text-sm shadow-sm">
@@ -1021,10 +1040,8 @@ const AdminDashboard = ({
       </header>
 
       <main className="flex-1 overflow-y-auto p-4 space-y-5">
-        {/* TAB 1: ADMIN OVERVIEW & INTERN COVERAGE LEADERBOARD */}
         {adminTab === 'dashboard' && (
           <>
-            {/* Top KPI Cards */}
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-gradient-to-br from-red-600 to-rose-700 text-white p-4 rounded-2xl shadow-md shadow-red-600/20">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-red-100 block">
@@ -1051,7 +1068,6 @@ const AdminDashboard = ({
               </div>
             </div>
 
-            {/* Date Filter & Intern Coverage Breakdown */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1150,7 +1166,6 @@ const AdminDashboard = ({
               </div>
             </div>
 
-            {/* Visited Outlets List (With Intern Filter + Photo & Product Visibility) */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
@@ -1222,142 +1237,154 @@ const AdminDashboard = ({
           </>
         )}
 
-        {/* TAB 2: ADMIN INTERN ROUTE & TERRITORY CIRCLE TRACKER */}
         {adminTab === 'routes' && (
           <div className="space-y-3">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-2">
-              <label htmlFor="adminInternSelect" className="block text-xs font-bold uppercase text-gray-700">
-                Select Intern to Track ({internAccounts.length} Interns)
-              </label>
-              <select
-                id="adminInternSelect"
-                value={selectedIntern}
-                onChange={(e) => setSelectedIntern(e.target.value)}
-                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm font-bold text-gray-900 bg-gray-50 focus:ring-2 focus:ring-red-500"
-              >
-                {internAccounts.map((u) => (
-                  <option key={u.username} value={u.username}>
-                    {u.username} — {u.fullName}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between">
+                <label htmlFor="adminInternSelect" className="block text-xs font-bold uppercase text-gray-700">
+                  Select Intern to Track ({internAccounts.length} Interns)
+                </label>
+                {GOOGLE_SCRIPT_URL && (
+                  <button
+                    type="button"
+                    onClick={fetchAdminData}
+                    className="text-[11px] font-bold text-red-600 hover:underline flex items-center gap-1"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                    Refresh List
+                  </button>
+                )}
+              </div>
+              {internAccounts.length === 0 ? (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3 font-medium">
+                  No intern accounts loaded yet. Check your <strong>Users</strong> tab in Google Sheets and tap Refresh.
+                </p>
+              ) : (
+                <select
+                  id="adminInternSelect"
+                  value={activeRouteIntern}
+                  onChange={(e) => setSelectedIntern(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm font-bold text-gray-900 bg-gray-50 focus:ring-2 focus:ring-red-500"
+                >
+                  {internAccounts.map((u) => (
+                    <option key={u.username} value={u.username}>
+                      {u.username} — {u.fullName}
+                    </option>
+                  ))}
+                </select>
+              )}
               <p className="text-[11px] text-gray-500">
                 Choose an intern above and select a date below to inspect their route line, area circle, and distance covered.
               </p>
             </div>
 
-            <MapSection internId={selectedIntern} localRecords={allOutlets} />
+            {activeRouteIntern && (
+              <MapSection internId={activeRouteIntern} localRecords={allOutlets} />
+            )}
           </div>
         )}
 
-        {/* TAB 3: USERS & GOOGLE SHEET CREDENTIALS OVERVIEW */}
         {adminTab === 'users' && (
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-            <div>
-              <h2 className="text-base font-black text-gray-900 flex items-center gap-2">
-                <Users className="w-5 h-5 text-red-600" /> User Accounts (`Users` Sheet Tab)
-              </h2>
-              <p className="text-xs text-gray-500 mt-1">
-                To add an intern, change a password, or change <code>user_type</code> (<code>admin</code> vs <code>intern</code>), edit the <strong>Users</strong> tab directly inside your Google Sheet—changes take effect on the next login!
-              </p>
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-black text-gray-900 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-red-600" /> Users Sheet ({usersList.length})
+                </h2>
+                <p className="text-xs text-gray-500">
+                  Manage usernames, roles (<code>admin</code> / <code>intern</code>), and passwords directly in your Google Sheet's <strong>Users</strong> tab.
+                </p>
+              </div>
             </div>
 
-            <div className="overflow-x-auto border border-gray-200 rounded-xl">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-100 text-gray-700 uppercase text-[10px] font-bold">
-                    <th className="p-3 border-b">Username</th>
-                    <th className="p-3 border-b">Full Name</th>
-                    <th className="p-3 border-b">User Type</th>
-                    <th className="p-3 border-b">Password</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {usersList.map((u) => (
-                    <tr key={u.username} className="hover:bg-slate-50">
-                      <td className="p-3 font-bold text-gray-900">{u.username}</td>
-                      <td className="p-3 text-gray-600">{u.fullName}</td>
-                      <td className="p-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            (u.userType || '').toLowerCase() === 'admin'
-                              ? 'bg-slate-900 text-white'
-                              : 'bg-red-50 text-red-700 border border-red-200'
-                          }`}
-                        >
-                          {u.userType}
-                        </span>
-                      </td>
-                      <td className="p-3 font-mono text-gray-500">
-                        {u.password || '••••••••'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="divide-y divide-gray-100">
+              {usersList.map((u) => (
+                <div key={u.username} className="py-2.5 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-black text-gray-900">{u.username}</div>
+                    <div className="text-[11px] text-gray-500">{u.fullName}</div>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full ${
+                      (u.userType || '').toLowerCase() === 'admin'
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-red-50 text-red-700 border border-red-200'
+                    }`}
+                  >
+                    {u.userType}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* TAB 4: COMPANY, BRAND & SKU MASTER LISTS (From Excel / Google Sheet) */}
         {adminTab === 'catalog' && (
           <div className="space-y-4">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-1 gap-2">
                 <h2 className="text-base font-black text-gray-900 flex items-center gap-2">
                   <Layers className="w-5 h-5 text-red-600" /> Product Master Lists
                 </h2>
-                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  {catalogSource}
-                </span>
+                <div className="flex items-center gap-2">
+                  {GOOGLE_SCRIPT_URL && onRefreshCatalog && (
+                    <button
+                      type="button"
+                      onClick={onRefreshCatalog}
+                      className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-100"
+                    >
+                      Sync Sheet
+                    </button>
+                  )}
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    {catalogSource}
+                  </span>
+                </div>
               </div>
               <p className="text-xs text-gray-500">
-                All companies, brands, and SKU ranges from your Excel file are pre-loaded in the app. You can also edit them anytime in the <strong>Catalog</strong> & <strong>SKU_Ranges</strong> tabs of your Google Sheet.
+                Complete Company & Brand directory (available in Toothpaste, Toothbrush & Mouthwash) and Toothpaste SKU Size Ranges.
               </p>
 
-              <div className="mt-4 pt-3 border-t border-gray-100">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-700 block mb-2">
+              <div className="mt-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">
                   Toothpaste SKU Size Ranges ({skuRanges.length})
-                </span>
+                </h3>
                 <div className="flex flex-wrap gap-1.5">
-                  {skuRanges.map((sku) => (
-                    <span key={sku} className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-50 text-red-700 border border-red-100">
-                      {sku}
+                  {skuRanges.map((r) => (
+                    <span key={r} className="px-2.5 py-1 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs font-semibold">
+                      {r}
                     </span>
                   ))}
                 </div>
               </div>
             </div>
 
-            {['toothpaste', 'toothbrush', 'mouthwash'].map((cat) => {
-              const catMap = catalog[cat] || {};
+            {(() => {
+              const allCompanies = {
+                ...(catalog.toothpaste || {}),
+                ...(catalog.toothbrush || {}),
+                ...(catalog.mouthwash || {})
+              };
               return (
-                <div key={cat} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-gray-800">
-                    {cat} Companies & Brands ({Object.keys(catMap).length})
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-2.5">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-red-700">
+                    All Companies & Brands ({Object.keys(allCompanies).length} Companies)
                   </h3>
                   <div className="divide-y divide-gray-100">
-                    {Object.entries(catMap).map(([comp, brands]) => (
-                      <div key={comp} className="py-2.5">
-                        <span className="text-xs font-bold text-gray-900 block mb-1">{comp}</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {(brands || []).map((b) => (
-                            <span key={b} className="px-2 py-0.5 rounded-md text-[11px] bg-slate-100 text-slate-700 font-medium">
-                              {b}
-                            </span>
-                          ))}
-                        </div>
+                    {Object.entries(allCompanies).map(([comp, brands]) => (
+                      <div key={comp} className="py-2">
+                        <div className="text-xs font-bold text-gray-900">{comp}</div>
+                        <div className="text-[11px] text-gray-500 mt-0.5">{brands.join(', ')}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               );
-            })}
+            })()}
           </div>
         )}
       </main>
 
-      {/* Admin Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around p-1.5 shadow-[0_-4px_15px_rgba(0,0,0,0.04)] z-20">
         {[
           { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -1376,7 +1403,7 @@ const AdminDashboard = ({
               }`}
             >
               <IconComponent className={`w-5 h-5 ${isActive ? 'text-red-600' : ''}`} />
-              <span className="text-[10px] mt-1 tracking-tight">{tab.label}</span>
+              <span className="text-[10px] mt-1">{tab.label}</span>
             </button>
           );
         })}
@@ -1386,21 +1413,17 @@ const AdminDashboard = ({
 };
 
 // ============================================================================
-// 7. COVERED OUTLETS SECTION (With Date Filter & Google Sheet Sync)
+// 7. COVERED OUTLETS SECTION (Date Filter for Interns)
 // ============================================================================
 const CoveredOutletsSection = ({ internId, localRecords }) => {
-  const todayStr = getLocalDateString(0);
-  const yesterdayStr = getLocalDateString(-1);
-
-  const [filterMode, setFilterMode] = useState('today');
-  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [dateFilter, setDateFilter] = useState(getLocalDateString(0));
   const [remoteRecords, setRemoteRecords] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const fetchCoverageFromSheet = () => {
-    if (!GOOGLE_SCRIPT_URL) return;
+  const fetchCoverage = () => {
+    if (!GOOGLE_SCRIPT_URL || !internId) return;
     setIsSyncing(true);
-    const url = `${GOOGLE_SCRIPT_URL}?type=coverage&internId=${encodeURIComponent(internId)}`;
+    const url = `${GOOGLE_SCRIPT_URL}?type=coverage&internId=${encodeURIComponent(internId)}&date=${encodeURIComponent(dateFilter)}`;
     fetch(url)
       .then((res) => res.json())
       .then((json) => {
@@ -1418,493 +1441,399 @@ const CoveredOutletsSection = ({ internId, localRecords }) => {
   };
 
   useEffect(() => {
-    fetchCoverageFromSheet();
-  }, [internId]);
+    fetchCoverage();
+  }, [internId, dateFilter]);
 
-  // Combine Google Sheet rows with any just-submitted local rows (deduped by outletName + date + time)
-  const normalizedLocal = localRecords.map((o) => ({
-    ...o,
-    date: normalizeDateString(o.date)
+  const normalizedLocal = localRecords.map((r) => ({
+    ...r,
+    date: normalizeDateString(r.date)
   }));
 
-  const records = (() => {
-    if (remoteRecords === null) return normalizedLocal;
-    const combined = [...remoteRecords];
-    normalizedLocal.forEach((loc) => {
-      const exists = combined.some(
-        (rem) =>
-          rem.outletId === loc.outletId ||
-          (rem.outletName === loc.outletName && rem.date === loc.date && rem.time === loc.time)
-      );
-      if (!exists) combined.unshift(loc);
-    });
-    return combined;
-  })();
+  const sourceList = remoteRecords !== null ? remoteRecords : normalizedLocal;
+  const filteredList = dateFilter
+    ? sourceList.filter((item) => item.date === dateFilter)
+    : sourceList;
 
-  const activeDateTarget =
-    filterMode === 'today'
-      ? todayStr
-      : filterMode === 'yesterday'
-      ? yesterdayStr
-      : filterMode === 'custom'
-      ? normalizeDateString(selectedDate)
-      : null;
-
-  const filteredRecords = activeDateTarget
-    ? records.filter((item) => normalizeDateString(item.date) === activeDateTarget)
-    : records;
-
-  const todayCount = records.filter((item) => normalizeDateString(item.date) === todayStr).length;
-  const totalCount = records.length;
-
-  const handleDatePickerChange = (e) => {
-    const val = normalizeDateString(e.target.value);
-    if (val) {
-      setSelectedDate(val);
-      setFilterMode('custom');
-    }
-  };
+  const todayStr = getLocalDateString(0);
+  const yesterdayStr = getLocalDateString(-1);
 
   return (
-    <div className="space-y-5 pb-6">
-      {/* Summary Header Card */}
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-black text-gray-800 flex items-center gap-2">
-            <CheckSquare className="text-red-600 w-5 h-5" /> Covered Outlets
-          </h2>
-          <div className="flex items-center gap-2">
-            {GOOGLE_SCRIPT_URL && (
-              <button
-                type="button"
-                onClick={fetchCoverageFromSheet}
-                disabled={isSyncing}
-                className="p-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-                title="Refresh from Google Sheet"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-red-600' : ''}`} />
-              </button>
-            )}
-            <span className="bg-red-50 text-red-700 border border-red-200 text-xs font-bold px-2.5 py-1 rounded-full">
-              {internId}
-            </span>
-          </div>
-        </div>
-        <p className="text-xs text-gray-500">
-          Outlets are counted here automatically once you press <strong>Submit Survey Data</strong> and the record is stored in Google Sheets.
-        </p>
-
-        <div className="grid grid-cols-3 gap-3 mt-4">
-          <div className="bg-gradient-to-br from-red-600 to-rose-700 text-white p-3.5 rounded-2xl shadow-md shadow-red-600/20">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-red-100 block">
-              {filterMode === 'all' ? 'Filtered Total' : 'Selected Date'}
-            </span>
-            <span className="text-2xl font-black mt-0.5 block">{filteredRecords.length}</span>
-            <span className="text-[10px] text-red-100/90 truncate block">
-              {activeDateTarget || 'All Dates'}
-            </span>
-          </div>
-
-          <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">
-              Today
-            </span>
-            <span className="text-2xl font-black text-gray-900 mt-0.5 block">{todayCount}</span>
-            <span className="text-[10px] text-emerald-600 font-semibold block">Submitted</span>
-          </div>
-
-          <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">
-              All-Time
-            </span>
-            <span className="text-2xl font-black text-gray-900 mt-0.5 block">{totalCount}</span>
-            <span className="text-[10px] text-gray-500 font-medium block">Outlets</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Date Filter Bar */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+    <div className="space-y-4">
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
-            <Calendar className="w-4 h-4 text-red-600" /> Filter by Date
-          </span>
-          {activeDateTarget && (
-            <span className="text-xs font-mono font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-md">
-              {activeDateTarget}
-            </span>
+          <div>
+            <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
+              <CheckSquare className="w-5 h-5 text-red-600" /> Covered Outlets
+            </h2>
+            <p className="text-xs text-gray-500">Outlets successfully submitted by {internId}</p>
+          </div>
+          {GOOGLE_SCRIPT_URL && (
+            <button
+              type="button"
+              onClick={fetchCoverage}
+              disabled={isSyncing}
+              className="p-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+              title="Sync from Google Sheet"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            </button>
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              setFilterMode('today');
-              setSelectedDate(todayStr);
-            }}
+            onClick={() => setDateFilter(todayStr)}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-              filterMode === 'today'
+              dateFilter === todayStr
                 ? 'bg-red-600 text-white border-red-600 shadow-sm'
                 : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
             }`}
           >
-            Today ({todayCount})
+            Today
           </button>
-
           <button
             type="button"
-            onClick={() => {
-              setFilterMode('yesterday');
-              setSelectedDate(yesterdayStr);
-            }}
+            onClick={() => setDateFilter(yesterdayStr)}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-              filterMode === 'yesterday'
+              dateFilter === yesterdayStr
                 ? 'bg-red-600 text-white border-red-600 shadow-sm'
                 : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
             }`}
           >
             Yesterday
           </button>
-
           <button
             type="button"
-            onClick={() => setFilterMode('all')}
+            onClick={() => setDateFilter('')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-              filterMode === 'all'
-                ? 'bg-red-600 text-white border-red-600 shadow-sm'
+              dateFilter === ''
+                ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
                 : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
             }`}
           >
-            All Dates ({totalCount})
+            All Dates
           </button>
+          <div className="flex items-center gap-1.5 ml-auto">
+            <Calendar className="w-4 h-4 text-gray-400" />
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(normalizeDateString(e.target.value))}
+              className="border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-gray-50 focus:ring-2 focus:ring-red-500"
+            />
+          </div>
         </div>
 
-        <div className="pt-1">
-          <label className="block text-[11px] font-semibold text-gray-500 mb-1">
-            Or Pick Specific Date:
-          </label>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={handleDatePickerChange}
-            className="w-full border border-gray-300 rounded-xl p-2.5 text-sm font-semibold text-gray-800 bg-gray-50/70 focus:ring-2 focus:ring-red-500 focus:border-red-500"
-          />
+        <div className="bg-gradient-to-r from-red-600 to-rose-700 text-white p-4 rounded-2xl flex items-center justify-between shadow-md shadow-red-600/20">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-red-100 block">
+              {dateFilter ? `Covered on ${dateFilter}` : 'Total Covered Outlets'}
+            </span>
+            <span className="text-3xl font-black mt-0.5 block">{filteredList.length}</span>
+          </div>
+          <Store className="w-10 h-10 text-red-200/80" />
         </div>
       </div>
 
-      {/* Covered Outlets List */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-600">
-            Submitted Outlets ({filteredRecords.length})
-          </h3>
+      {filteredList.length === 0 ? (
+        <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-gray-200 text-center">
+          <p className="text-sm font-semibold text-gray-500">
+            No outlets submitted {dateFilter ? `on ${dateFilter}` : 'yet'}.
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            An outlet appears here after you press <strong>Submit Survey Data</strong>.
+          </p>
         </div>
-
-        {filteredRecords.length === 0 ? (
-          <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-gray-200 text-center">
-            <Store className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm font-bold text-gray-700">No outlets covered on this date</p>
-            <p className="text-xs text-gray-500 mt-1">
-              Complete an outlet survey and press <strong>Submit Survey Data</strong> to log coverage.
-            </p>
-          </div>
-        ) : (
-          filteredRecords.map((outlet, idx) => (
+      ) : (
+        <div className="space-y-3">
+          {filteredList.map((item) => (
             <div
-              key={outlet.outletId}
+              key={item.outletId}
               className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-start justify-between gap-3"
             >
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-red-50 text-red-600 font-black text-xs flex items-center justify-center shrink-0 mt-0.5 border border-red-100">
-                  #{filteredRecords.length - idx}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="text-sm font-bold text-gray-900 truncate">{outlet.outletName}</h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                      {outlet.outletType}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 truncate mt-0.5">{outlet.address}</p>
-                  <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-500 font-medium">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-gray-400" /> {outlet.date}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-gray-400" /> {outlet.time}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col items-end shrink-0 gap-1.5">
-                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  <CheckCircle2 className="w-3 h-3" /> Submitted
-                </span>
-                {typeof outlet.companiesCount === 'number' && (
-                  <span className="text-[11px] font-semibold text-gray-600">
-                    {outlet.companiesCount} {outlet.companiesCount === 1 ? 'company' : 'companies'}
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-black text-gray-900">{item.outletName}</h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-100">
+                    {item.outletType}
                   </span>
-                )}
+                </div>
+                {item.address && <p className="text-xs text-gray-600">{item.address}</p>}
+                <p className="text-[11px] text-gray-400 font-medium">
+                  {item.date} • {item.time}
+                  {item.mobile ? ` • ${item.mobile}` : ''}
+                </p>
               </div>
+              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                Submitted
+              </span>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
 
 // ============================================================================
-// 8. OUTLET SECTION COMPONENT (With Client-Side 800px Image Compression)
+// 8. OUTLET SECTION COMPONENT (Live Camera Only + GPS + Optional OCR)
 // ============================================================================
 const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+
   const fetchLocation = () => {
-    setIsLocating(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const lat = position.coords.latitude.toFixed(6);
-          const lng = position.coords.longitude.toFixed(6);
-          const currentTime = new Date().toLocaleString('en-US', {
-            dateStyle: 'medium',
-            timeStyle: 'medium'
-          });
-          setData((prev) => ({
-            ...prev,
-            lat,
-            lng,
-            timestamp: prev.timestamp || currentTime
-          }));
-          setIsLocating(false);
-        },
-        (error) => {
-          console.warn('Geolocation failed', error);
-          setIsLocating(false);
-          showModal('GPS Note', 'Unable to fetch GPS automatically. Please check device location permissions or enter coordinates manually.', 'warning');
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    } else {
-      setIsLocating(false);
-      showModal('Error', 'Geolocation is not supported on this device.', 'error');
+    if (!navigator.geolocation) {
+      showModal('GPS Unavailable', 'Your browser does not support GPS geolocation.', 'error');
+      return;
     }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setData((prev) => ({
+          ...prev,
+          lat: pos.coords.latitude.toFixed(6),
+          lng: pos.coords.longitude.toFixed(6),
+          timestamp: prev.timestamp || new Date().toLocaleString()
+        }));
+        setIsLocating(false);
+      },
+      () => {
+        setIsLocating(false);
+        showModal(
+          'Location Permission Needed',
+          'Could not detect GPS automatically. Please enable location permissions or enter coordinates manually.',
+          'warning'
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   const startCamera = async () => {
-    setIsCameraOpen(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      setIsCameraOpen(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 100);
     } catch (err) {
-      showModal('Camera Permission Required', 'Unable to access camera directly. Please grant camera permissions in your browser.', 'error');
-      setIsCameraOpen(false);
+      console.error('Camera error:', err);
+      showModal(
+        'Camera Permission Required',
+        'Unable to access the rear camera. Please allow camera permission in your browser settings (gallery upload is disabled).',
+        'error'
+      );
     }
   };
 
   const stopCamera = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     }
     setIsCameraOpen(false);
   };
 
-  const capturePhoto = async () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-
-      // Compress signboard photo to max 800px width (~40 KB) so 60,000 photos fit inside free 15 GB Google Drive
-      const MAX_WIDTH = 800;
-      const scale = video.videoWidth > MAX_WIDTH ? MAX_WIDTH / video.videoWidth : 1;
-      canvas.width = Math.round(video.videoWidth * scale);
-      canvas.height = Math.round(video.videoHeight * scale);
-
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
-      stopCamera();
-
-      const captureTime = new Date().toLocaleString('en-US', {
-        dateStyle: 'medium',
-        timeStyle: 'medium'
-      });
-
-      setData((prev) => ({
-        ...prev,
-        photoDataUrl: dataUrl,
-        timestamp: captureTime
-      }));
-
-      fetchLocation();
-
-      if (GEMINI_API_KEY) {
-        processImageWithGemini(dataUrl);
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
       }
+    };
+  }, []);
+
+  const analyzeSignboardWithGemini = async (base64Image) => {
+    if (!GEMINI_API_KEY) return;
+    setIsAnalyzing(true);
+    try {
+      const cleanBase64 = base64Image.split(',')[1];
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: 'Extract outlet signboard details as JSON with keys: name, mobile, address. Return only valid JSON.'
+                  },
+                  {
+                    inline_data: { mime_type: 'image/jpeg', data: cleanBase64 }
+                  }
+                ]
+              }
+            ]
+          })
+        }
+      );
+      const json = await res.json();
+      const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        setData((prev) => ({
+          ...prev,
+          name: parsed.name || prev.name,
+          mobile: parsed.mobile || prev.mobile,
+          address: parsed.address || prev.address
+        }));
+      }
+    } catch (e) {
+      console.warn('OCR skipped:', e);
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
-  const processImageWithGemini = async (base64Url) => {
-    setIsExtracting(true);
-    try {
-      const base64Data = base64Url.split(',')[1];
-      const payload = {
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: "Analyze this image of a store signboard. Extract the store information and return strictly a raw JSON object with keys: 'name', 'mobile', 'address'. Do not use markdown backticks."
-              },
-              { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
-            ]
-          }
-        ]
-      };
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
 
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+    const maxWidth = 800;
+    const scale = video.videoWidth > maxWidth ? maxWidth / video.videoWidth : 1;
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
 
-      const result = await response.json();
-      const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      try {
-        const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const extracted = JSON.parse(cleanText);
+    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.65);
+    const nowTimestamp = new Date().toLocaleString();
 
-        setData((prev) => ({
-          ...prev,
-          name: extracted.name || prev.name,
-          mobile: extracted.mobile || prev.mobile,
-          address: extracted.address || prev.address
-        }));
-        showModal('Signboard Scanned', 'Signboard text auto-detected. Please verify the information.', 'success');
-      } catch (parseError) {
-        showModal('Manual Input Required', 'Signboard text was unclear. Please type the outlet name and details manually.', 'warning');
-      }
-    } catch (error) {
-      console.warn('OCR fallback:', error);
-    } finally {
-      setIsExtracting(false);
-    }
+    setData((prev) => ({
+      ...prev,
+      photoDataUrl: compressedDataUrl,
+      timestamp: nowTimestamp
+    }));
+
+    stopCamera();
+    fetchLocation();
+    analyzeSignboardWithGemini(compressedDataUrl);
   };
 
   return (
-    <div className="space-y-6 pb-6">
+    <div className="space-y-5">
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-        <h2 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2">
-          <MapPin className="text-red-600 w-5 h-5" /> Outlet Identity
-        </h2>
-        <p className="text-xs text-gray-500 mb-4">
-          A live photo of the outlet signboard is mandatory to unlock the rest of the survey.
-        </p>
-        
-        {/* Signboard Camera Box */}
-        {!data.photoDataUrl ? (
-          <div className="mb-6">
-            {!isCameraOpen ? (
-              <button 
-                onClick={startCamera}
-                disabled={isSaved}
-                className="w-full h-36 border-2 border-dashed border-red-300 rounded-2xl bg-red-50/60 flex flex-col items-center justify-center text-red-600 hover:bg-red-100/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group p-4"
-              >
-                <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-md mb-2 group-hover:scale-105 transition-transform border border-red-100">
-                  <Camera className="w-6 h-6 text-red-600" />
-                </div>
-                <span className="text-xs font-black uppercase tracking-wider text-red-700">Take Signboard Photo (Mandatory)</span>
-                <span className="text-[11px] text-gray-500 mt-1">Live camera only • No gallery uploads allowed</span>
-              </button>
-            ) : (
-              <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4] md:aspect-video w-full">
-                <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4">
-                  <button onClick={stopCamera} className="bg-white/20 backdrop-blur text-white p-3 rounded-full hover:bg-white/30">
-                    <X className="w-6 h-6" />
-                  </button>
-                  <button onClick={capturePhoto} className="bg-red-600 border-4 border-white text-white p-4 rounded-full shadow-lg hover:bg-red-700">
-                    <Camera className="w-8 h-8" />
-                  </button>
-                </div>
-              </div>
-            )}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-black text-gray-900">1. Outlet Information</h2>
+            <p className="text-xs text-gray-500">Live signboard photo is mandatory to unlock products</p>
           </div>
-        ) : (
-          <div className="mb-6 relative rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-sm">
-            <img src={data.photoDataUrl} alt="Signboard" className="w-full h-48 object-cover" />
-            
-            <div className="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 shadow">
-              <Check className="w-3 h-3" /> Photo Captured (~40 KB)
+          {isSaved && (
+            <span className="text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Locked
+            </span>
+          )}
+        </div>
+
+        <div className="mb-5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">
+            Signboard Live Photo <span className="text-red-500">*</span>
+          </label>
+
+          {isCameraOpen ? (
+            <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-red-500">
+              <video ref={videoRef} autoPlay playsInline muted className="w-full h-64 object-cover" />
+              <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-4">
+                <button
+                  type="button"
+                  onClick={capturePhoto}
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-full shadow-lg flex items-center gap-2 text-sm"
+                >
+                  <Camera className="w-4 h-4" /> Capture Photo
+                </button>
+                <button
+                  type="button"
+                  onClick={stopCamera}
+                  className="bg-white/90 text-gray-800 font-bold px-4 py-2.5 rounded-full shadow text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-
-            {!isSaved && (
-              <button 
-                onClick={() => setData((prev) => ({ ...prev, photoDataUrl: null }))}
-                className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full shadow-md hover:bg-red-700"
-                title="Retake photo"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-
-            {isExtracting && (
-              <div className="absolute inset-0 bg-white/85 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-                <Loader2 className="w-8 h-8 text-red-600 animate-spin mb-2" />
-                <span className="text-xs font-bold text-red-700 uppercase tracking-wider text-center">Auto-reading Signboard via AI OCR...</span>
+          ) : data.photoDataUrl ? (
+            <div className="relative rounded-2xl overflow-hidden border border-gray-200">
+              <img src={data.photoDataUrl} alt="Outlet Signboard" className="w-full h-56 object-cover" />
+              {!isSaved && (
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="absolute bottom-3 right-3 bg-black/75 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 hover:bg-black"
+                >
+                  <Camera className="w-3.5 h-3.5" /> Retake Photo
+                </button>
+              )}
+              {isAnalyzing && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-xs font-bold gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Reading Signboard...
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={startCamera}
+              disabled={isSaved}
+              className="w-full h-44 border-2 border-dashed border-red-300 rounded-2xl bg-red-50/40 hover:bg-red-50 transition-colors flex flex-col items-center justify-center gap-2 text-red-700 disabled:opacity-50"
+            >
+              <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md shadow-red-600/25">
+                <Camera className="w-6 h-6" />
               </div>
-            )}
-          </div>
-        )}
+              <span className="text-sm font-bold">Tap to Open Live Camera</span>
+              <span className="text-[11px] text-gray-500">Gallery uploads disabled • Auto-compresses to ~40 KB</span>
+            </button>
+          )}
+        </div>
 
-        {/* Outlet Details Form */}
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">
               Outlet Name <span className="text-red-500">*</span>
             </label>
-            <input 
-              type="text" 
-              value={data.name} 
+            <input
+              type="text"
+              value={data.name}
               onChange={(e) => setData((prev) => ({ ...prev, name: e.target.value }))}
               disabled={isSaved}
-              className="w-full border-gray-300 rounded-xl p-3 border text-sm font-semibold focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100" 
-              placeholder="e.g. Rahim General Store" 
+              className="w-full border-gray-300 rounded-xl p-3 border text-sm font-semibold focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100"
+              placeholder="e.g. Rahim General Store"
             />
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">Mobile Number</label>
-              <input 
-                type="tel" 
-                value={data.mobile} 
+              <input
+                type="tel"
+                value={data.mobile}
                 onChange={(e) => setData((prev) => ({ ...prev, mobile: e.target.value }))}
                 disabled={isSaved}
-                className="w-full border-gray-300 rounded-xl p-3 border text-sm font-semibold focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100" 
-                placeholder="e.g. 017..." 
+                className="w-full border-gray-300 rounded-xl p-3 border text-sm font-semibold focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100"
+                placeholder="e.g. 017..."
               />
             </div>
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">
                 Outlet Type <span className="text-red-500">*</span>
               </label>
-              <select 
+              <select
                 value={data.type}
                 onChange={(e) => setData((prev) => ({ ...prev, type: e.target.value }))}
                 disabled={isSaved}
@@ -1920,17 +1849,16 @@ const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
 
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">Address</label>
-            <textarea 
-              value={data.address} 
+            <textarea
+              value={data.address}
               onChange={(e) => setData((prev) => ({ ...prev, address: e.target.value }))}
               disabled={isSaved}
-              className="w-full border-gray-300 rounded-xl p-3 border text-sm font-medium focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100 resize-none" 
+              className="w-full border-gray-300 rounded-xl p-3 border text-sm font-medium focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100 resize-none"
               rows={2}
-              placeholder="Store address details" 
+              placeholder="Store address details"
             />
           </div>
 
-          {/* GPS Coordinates & Timestamp Section */}
           <div className="bg-gradient-to-br from-slate-50 to-red-50/25 p-4 rounded-xl border border-red-100/80 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5 uppercase tracking-wide">
@@ -1950,23 +1878,23 @@ const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Latitude</label>
-                <input 
+                <input
                   type="text"
                   value={data.lat}
                   onChange={(e) => setData((prev) => ({ ...prev, lat: e.target.value }))}
                   disabled={isSaved}
-                  className="w-full bg-white border-gray-300 rounded-lg p-2.5 text-xs font-mono border focus:ring-2 focus:ring-red-500 disabled:bg-gray-100" 
+                  className="w-full bg-white border-gray-300 rounded-lg p-2.5 text-xs font-mono border focus:ring-2 focus:ring-red-500 disabled:bg-gray-100"
                   placeholder="e.g. 23.8103"
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Longitude</label>
-                <input 
+                <input
                   type="text"
                   value={data.lng}
                   onChange={(e) => setData((prev) => ({ ...prev, lng: e.target.value }))}
                   disabled={isSaved}
-                  className="w-full bg-white border-gray-300 rounded-lg p-2.5 text-xs font-mono border focus:ring-2 focus:ring-red-500 disabled:bg-gray-100" 
+                  className="w-full bg-white border-gray-300 rounded-lg p-2.5 text-xs font-mono border focus:ring-2 focus:ring-red-500 disabled:bg-gray-100"
                   placeholder="e.g. 90.4125"
                 />
               </div>
@@ -1976,12 +1904,12 @@ const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
               <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5 text-gray-400" /> Survey Timestamp
               </label>
-              <input 
+              <input
                 type="text"
                 value={data.timestamp}
                 onChange={(e) => setData((prev) => ({ ...prev, timestamp: e.target.value }))}
                 disabled={isSaved}
-                className="w-full bg-white border-gray-300 rounded-lg p-2.5 text-xs font-mono border focus:ring-2 focus:ring-red-500 disabled:bg-gray-100" 
+                className="w-full bg-white border-gray-300 rounded-lg p-2.5 text-xs font-mono border focus:ring-2 focus:ring-red-500 disabled:bg-gray-100"
                 placeholder="Auto-detected upon photo capture"
               />
             </div>
@@ -1989,7 +1917,7 @@ const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
         </div>
 
         {!isSaved ? (
-          <button 
+          <button
             onClick={onSave}
             className={`w-full mt-6 py-3.5 rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 ${
               !data.photoDataUrl || !data.name || !data.type
@@ -2005,7 +1933,7 @@ const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
           </div>
         )}
       </div>
-      
+
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );
@@ -2067,9 +1995,8 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
         const brandsList = item.brands || [];
         if (brandsList.includes(brandName)) {
           return { ...item, brands: brandsList.filter((b) => b !== brandName) };
-        } else {
-          return { ...item, brands: [...brandsList, brandName] };
         }
+        return { ...item, brands: [...brandsList, brandName] };
       })
     );
   };
@@ -2094,21 +2021,15 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
         const skusList = item.skus || [];
         if (skusList.includes(skuRange)) {
           return { ...item, skus: skusList.filter((s) => s !== skuRange) };
-        } else {
-          return { ...item, skus: [...skusList, skuRange] };
         }
+        return { ...item, skus: [...skusList, skuRange] };
       })
     );
   };
 
   const updateTotalQty = (entryId, totalQty) => {
     setData(
-      data.map((item) => {
-        if (item.id === entryId) {
-          return { ...item, totalQty };
-        }
-        return item;
-      })
+      data.map((item) => (item.id === entryId ? { ...item, totalQty } : item))
     );
   };
 
@@ -2119,7 +2040,7 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
           <h2 className="text-xl font-black text-gray-800 tracking-tight">{title} Visibility</h2>
           <p className="text-xs text-gray-500">Record all companies & brands present in this outlet</p>
         </div>
-        <button 
+        <button
           onClick={addCompanyEntry}
           className="flex items-center gap-1.5 bg-red-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-red-600/20 hover:bg-red-700 transition-all active:scale-95"
         >
@@ -2130,8 +2051,8 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
       {data.length === 0 ? (
         <div className="text-center p-8 bg-white rounded-2xl border-2 border-dashed border-red-200">
           <p className="text-gray-500 mb-3 text-sm">No {title.toLowerCase()} companies added yet.</p>
-          <button 
-            onClick={addCompanyEntry} 
+          <button
+            onClick={addCompanyEntry}
             className="text-red-600 font-bold text-sm hover:underline"
           >
             + Add First Company
@@ -2143,7 +2064,8 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
             const isOtherCompany = item.company === '__OTHER__';
             const availableBrands = !isOtherCompany && item.company ? categoryCatalog[item.company] || [] : [];
             const customAddedBrands = (item.brands || []).filter((b) => !availableBrands.includes(b));
-            const isColgate = item.company === 'Colgate';
+            const isColgate =
+              item.company === 'Colgate' || item.company === 'Colgate-Palmolive';
             const displayCompanyName = isOtherCompany
               ? (item.customCompany || '').trim() || 'Other Company'
               : item.company;
@@ -2178,7 +2100,6 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
                   </button>
                 </div>
 
-                {/* Company Dropdown */}
                 <div className="mb-4">
                   <label className="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">
                     Company Name
@@ -2196,7 +2117,6 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
                   </select>
                 </div>
 
-                {/* Manual Company Input when "Other" is chosen */}
                 {isOtherCompany && (
                   <div className="mb-4 bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 space-y-3">
                     <div>
@@ -2214,7 +2134,6 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
                   </div>
                 )}
 
-                {/* Brand Selection (Catalog + Manual Entry) */}
                 {item.company && (
                   <div className="space-y-4">
                     <div>
@@ -2297,7 +2216,6 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
                       </div>
                     </div>
 
-                    {/* Toothpaste Details: SKU Size Range & Single Total Quantity */}
                     {hasSKU && (
                       <div className="space-y-4 pt-3 border-t border-gray-100">
                         <div>
@@ -2312,13 +2230,13 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
                                   key={skuRange}
                                   type="button"
                                   onClick={() => toggleSku(item.id, skuRange)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1 ${
                                     isSkuSelected
                                       ? 'bg-red-600 text-white border-red-600 shadow-sm'
-                                      : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                      : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
                                   }`}
                                 >
-                                  {isSkuSelected && <Check className="w-3 h-3" />}
+                                  {isSkuSelected && <Check className="w-3.5 h-3.5" />}
                                   {skuRange}
                                 </button>
                               );
@@ -2327,13 +2245,10 @@ const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalo
                         </div>
 
                         {hasQty && (
-                          <div className="bg-red-50/50 p-4 rounded-xl border border-red-100">
-                            <label className="block text-xs font-bold text-red-900 mb-1 uppercase tracking-wider">
-                              Total Product Quantity of {displayCompanyName} in Outlet
+                          <div className="bg-red-50/60 p-3.5 rounded-xl border border-red-100">
+                            <label className="block text-xs font-bold text-red-900 mb-1.5 uppercase tracking-wider">
+                              Total {displayCompanyName} Toothpaste Quantity in Outlet
                             </label>
-                            <p className="text-[11px] text-gray-500 mb-2">
-                              Enter the total units for this company across all selected brands & SKU ranges (e.g. 100)
-                            </p>
                             <div className="relative">
                               <input 
                                 type="number"
@@ -2371,31 +2286,51 @@ const MapSection = ({ internId, localRecords }) => {
   const [mapReady, setMapReady] = useState(false);
   const [selectedDate, setSelectedDate] = useState(getLocalDateString(0));
   const [remotePoints, setRemotePoints] = useState(null);
+  const [availableDates, setAvailableDates] = useState([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     setRemotePoints(null);
-    if (!GOOGLE_SCRIPT_URL || !internId) return;
+    if (!GOOGLE_SCRIPT_URL || !internId) {
+      setIsLoadingRoute(false);
+      return;
+    }
     setIsLoadingRoute(true);
     const url = `${GOOGLE_SCRIPT_URL}?type=route&internId=${encodeURIComponent(internId)}&date=${encodeURIComponent(selectedDate)}`;
     fetch(url)
       .then((res) => res.json())
       .then((json) => {
+        if (cancelled) return;
+        if (Array.isArray(json.availableDates)) {
+          setAvailableDates(json.availableDates.map((d) => normalizeDateString(d)).filter(Boolean));
+        }
         if (Array.isArray(json.points)) {
           setRemotePoints(
-            json.points.filter((p) => !isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lng))).map((p) => ({
-              ...p,
-              lat: parseFloat(p.lat),
-              lng: parseFloat(p.lng)
-            }))
+            json.points
+              .filter((p) => !isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lng)))
+              .map((p) => ({
+                ...p,
+                lat: parseFloat(p.lat),
+                lng: parseFloat(p.lng)
+              }))
           );
         } else {
           setRemotePoints([]);
         }
       })
-      .catch(() => setRemotePoints([]))
-      .finally(() => setIsLoadingRoute(false));
-  }, [internId, selectedDate]);
+      .catch(() => {
+        if (!cancelled) setRemotePoints([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingRoute(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [internId, selectedDate, refreshTick]);
 
   useEffect(() => {
     if (!document.getElementById('leaflet-css')) {
@@ -2442,6 +2377,16 @@ const MapSection = ({ internId, localRecords }) => {
       label: `Outlet #${i + 1}: ${r.outletName}`
     }));
 
+  const mergedAvailableDates = Array.from(
+    new Set([
+      ...availableDates,
+      ...localRecords
+        .filter((r) => sameId(r.internId, internId) && r.lat && r.lng)
+        .map((r) => normalizeDateString(r.date))
+        .filter(Boolean)
+    ])
+  ).sort((a, b) => b.localeCompare(a));
+
   const hasLiveGpsData =
     (remotePoints && remotePoints.length > 0) || localDayPoints.length > 0;
 
@@ -2465,7 +2410,6 @@ const MapSection = ({ internId, localRecords }) => {
       mapInstanceRef.current = null;
     }
 
-    // Default center (Dhaka) when an intern has 0 GPS points on the chosen date
     if (activePoints.length === 0) {
       const map = window.L.map(mapContainerRef.current, { zoomControl: true }).setView(
         [23.8103, 90.4125],
@@ -2593,6 +2537,16 @@ const MapSection = ({ internId, localRecords }) => {
         <div className="flex items-center justify-between gap-2 pt-1">
           <span className="text-[11px] font-bold text-gray-600 uppercase">Route Date:</span>
           <div className="flex items-center gap-1.5">
+            {GOOGLE_SCRIPT_URL && (
+              <button
+                type="button"
+                onClick={() => setRefreshTick((t) => t + 1)}
+                className="p-1.5 rounded-md bg-white border border-gray-300 text-gray-600 hover:text-red-600"
+                title="Reload route from Google Sheet"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingRoute ? 'animate-spin text-red-600' : ''}`} />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setSelectedDate(getLocalDateString(0))}
@@ -2612,8 +2566,28 @@ const MapSection = ({ internId, localRecords }) => {
             />
           </div>
         </div>
+
+        {mergedAvailableDates.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap pt-1">
+            <span className="text-[10px] font-bold uppercase text-gray-500">Dates with GPS:</span>
+            {mergedAvailableDates.slice(0, 6).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setSelectedDate(d)}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all ${
+                  selectedDate === d
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-white text-gray-700 border-gray-200 hover:border-red-300'
+                }`}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-      
+
       <div className="flex-1 relative z-0">
         {!mapReady && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
