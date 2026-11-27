@@ -57,22 +57,87 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    const outlet = payload.outlet;
-    const products = payload.products;
-    const outletId = 'OUT-' + now.getTime();
+    if (payload.action === 'save_catalog') {
+      let catSheet = findSheetByNames(ss, [
+        'catalog',
+        'company & brand',
+        'company and brand',
+        'brand',
+        'companies'
+      ]);
+      if (!catSheet) {
+        catSheet = ss.insertSheet('Catalog');
+      }
+      catSheet.clearContents();
+      const catalogRows = [['Category', 'Company_Name', 'Brand_Name']];
+      const catalogObj = payload.catalog || {};
+      ['toothpaste', 'toothbrush', 'mouthwash'].forEach(function (catKey) {
+        const compMap = catalogObj[catKey] || {};
+        Object.keys(compMap).forEach(function (compName) {
+          const brands = compMap[compName] || [];
+          if (brands.length === 0) {
+            catalogRows.push([catKey, compName, '']);
+          } else {
+            brands.forEach(function (bName) {
+              catalogRows.push([catKey, compName, bName]);
+            });
+          }
+        });
+      });
+      catSheet.getRange(1, 1, catalogRows.length, 3).setValues(catalogRows);
 
+      let skuSheet = findSheetByNames(ss, [
+        'sku_ranges',
+        'sku size range',
+        'sku range',
+        'sku'
+      ]);
+      if (!skuSheet) {
+        skuSheet = ss.insertSheet('SKU_Ranges');
+      }
+      skuSheet.clearContents();
+      const skuRows = [['SKU_Size_Range']];
+      (payload.skuRanges || []).forEach(function (r) {
+        if (String(r || '').trim()) {
+          skuRows.push([String(r).trim()]);
+        }
+      });
+      skuSheet.getRange(1, 1, skuRows.length, 1).setValues(skuRows);
+
+      return ContentService.createTextOutput(
+        JSON.stringify({
+          status: 'success',
+          catalogSheetName: catSheet.getName(),
+          skuSheetName: skuSheet.getName()
+        })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Default action: submit_survey
+    const outlet = payload.outlet || {};
+    const products = payload.products || {};
+    const outletId = 'OUT-' + now.getTime();
     let photoUrl = '';
-    if (outlet.photoDataUrl) {
-      const base64Data = outlet.photoDataUrl.split(',')[1];
-      const blob = Utilities.newBlob(
-        Utilities.base64Decode(base64Data),
-        'image/jpeg',
-        `${outletId}_${payload.internId}.jpg`
-      );
-      const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-      const file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      photoUrl = file.getUrl();
+
+    if (outlet.photoDataUrl && DRIVE_FOLDER_ID && DRIVE_FOLDER_ID !== '1A2B3C4D5E6F7G8H9I0J') {
+      try {
+        const parts = String(outlet.photoDataUrl).split(',');
+        const base64Data = parts.length > 1 ? parts[1] : parts[0];
+        const mimeMatch = parts[0].match(/data:(.*?);base64/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+        const decoded = Utilities.base64Decode(base64Data);
+        const blob = Utilities.newBlob(
+          decoded,
+          mimeType,
+          outletId + '_' + (payload.internId || 'intern') + '.jpg'
+        );
+        const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+        const file = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        photoUrl = file.getUrl();
+      } catch (photoErr) {
+        photoUrl = '';
+      }
     }
 
     const outletsSheet = ss.getSheetByName('Outlets');
@@ -87,7 +152,8 @@ function doPost(e) {
       outlet.lng || '',
       "'" + dateStr,
       timeStr,
-      photoUrl
+      photoUrl,
+      outlet.locationName || ''
     ]);
 
     if (outlet.lat && outlet.lng) {
@@ -300,7 +366,8 @@ function doGet(e) {
         lng: parseFloat(outletsData[i][7]) || null,
         date: formatSheetDate(outletsData[i][8]),
         time: String(outletsData[i][9] || '').trim(),
-        photoUrl: String(outletsData[i][10] || '').trim()
+        photoUrl: String(outletsData[i][10] || '').trim(),
+        locationName: String(outletsData[i][11] || '').trim()
       });
     }
 
@@ -344,7 +411,8 @@ function doGet(e) {
           lng: parseFloat(outletsData[i][7]) || null,
           date: rowDate,
           time: String(outletsData[i][9] || '').trim(),
-          photoUrl: String(outletsData[i][10] || '').trim()
+          photoUrl: String(outletsData[i][10] || '').trim(),
+          locationName: String(outletsData[i][11] || '').trim()
         });
       }
     }

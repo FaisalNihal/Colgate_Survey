@@ -24,7 +24,12 @@ import {
   BarChart3,
   ShieldCheck,
   ExternalLink,
-  Layers
+  Layers,
+  Edit2,
+  Search,
+  RotateCcw,
+  UploadCloud,
+  Navigation
 } from 'lucide-react';
 
 // ============================================================================
@@ -185,6 +190,65 @@ const computeTotalRouteKm = (points) => {
   return total;
 };
 
+const fetchLocationNameFromCoords = async (lat, lng) => {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+        lat
+      )}&lon=${encodeURIComponent(lng)}&zoom=14&addressdetails=1`,
+      { headers: { Accept: 'application/json' } }
+    );
+    if (!response.ok) return '';
+    const json = await response.json();
+    const addr = json.address || {};
+
+    const rawArea =
+      addr.suburb ||
+      addr.neighbourhood ||
+      addr.quarter ||
+      addr.borough ||
+      addr.city_district ||
+      addr.town ||
+      addr.village ||
+      addr.municipality ||
+      addr.county ||
+      '';
+    const rawCity =
+      addr.city ||
+      addr.state_district ||
+      addr.district ||
+      addr.town ||
+      addr.state ||
+      '';
+
+    const cleanPlace = (val) =>
+      String(val || '')
+        .replace(/\s*(Metropolitan|District|Division|Sadar|Thana|Upazila)$/i, '')
+        .trim();
+
+    const area = cleanPlace(rawArea);
+    const city = cleanPlace(rawCity);
+
+    if (area && city && area.toLowerCase() !== city.toLowerCase()) {
+      return `${area}, ${city}`;
+    }
+    if (area) return area;
+    if (city) return city;
+
+    if (json.display_name) {
+      return json.display_name
+        .split(',')
+        .slice(0, 2)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join(', ');
+    }
+    return '';
+  } catch {
+    return '';
+  }
+};
+
 // ============================================================================
 // 4. MODAL COMPONENT
 // ============================================================================
@@ -272,6 +336,7 @@ export default function App() {
     type: '',
     lat: '',
     lng: '',
+    locationName: '',
     timestamp: ''
   });
   const [isOutletSaved, setIsOutletSaved] = useState(false);
@@ -279,12 +344,105 @@ export default function App() {
   const [toothbrushData, setToothbrushData] = useState([]);
   const [mouthwashData, setMouthwashData] = useState([]);
 
-  // Master Catalog & SKU Ranges (Starts with outlet survey_2.xlsx data, syncs with Google Sheet if available)
-  const [surveyCatalog, setSurveyCatalog] = useState(DEFAULT_SURVEY_CATALOG);
-  const [skuSizeRanges, setSkuSizeRanges] = useState(DEFAULT_SKU_SIZE_RANGES);
-  const [catalogSource, setCatalogSource] = useState(
-    GOOGLE_SCRIPT_URL ? 'Syncing Google Sheet...' : 'Excel Built-in'
-  );
+  // Master Catalog & SKU Ranges (Loads local edits or Google Sheet, falls back to outlet survey_2.xlsx)
+  const [surveyCatalog, setSurveyCatalog] = useState(() => {
+    try {
+      const saved = localStorage.getItem('colgate_custom_catalog_v1');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Could not read saved catalog', e);
+    }
+    return DEFAULT_SURVEY_CATALOG;
+  });
+  const [skuSizeRanges, setSkuSizeRanges] = useState(() => {
+    try {
+      const saved = localStorage.getItem('colgate_custom_skus_v1');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Could not read saved SKU ranges', e);
+    }
+    return DEFAULT_SKU_SIZE_RANGES;
+  });
+  const [catalogSource, setCatalogSource] = useState(() => {
+    if (GOOGLE_SCRIPT_URL) return 'Syncing Google Sheet...';
+    try {
+      if (localStorage.getItem('colgate_custom_catalog_v1')) return 'Admin Custom (Saved)';
+    } catch {}
+    return 'Excel Built-in';
+  });
+  const [isSavingCatalog, setIsSavingCatalog] = useState(false);
+
+  const persistCatalogLocally = (nextCatalog, nextSkus) => {
+    try {
+      localStorage.setItem('colgate_custom_catalog_v1', JSON.stringify(nextCatalog));
+      localStorage.setItem('colgate_custom_skus_v1', JSON.stringify(nextSkus));
+    } catch (e) {
+      console.warn('Could not save catalog locally', e);
+    }
+  };
+
+  const handleSaveCatalog = async (nextCatalog, nextSkus, options = { notify: false }) => {
+    setSurveyCatalog(nextCatalog);
+    setSkuSizeRanges(nextSkus);
+    persistCatalogLocally(nextCatalog, nextSkus);
+
+    if (!GOOGLE_SCRIPT_URL) {
+      setCatalogSource('Admin Custom (Saved)');
+      if (options.notify) {
+        showModal(
+          'Catalog Updated',
+          'Your updated companies, brands, and SKU ranges are saved and active in the intern survey sections.',
+          'success'
+        );
+      }
+      return;
+    }
+
+    setIsSavingCatalog(true);
+    try {
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'save_catalog',
+          catalog: nextCatalog,
+          skuRanges: nextSkus
+        })
+      });
+      setCatalogSource('Google Sheet (Published)');
+      if (options.notify) {
+        showModal(
+          'Published to Google Sheet',
+          'Your updated companies, brands, and SKU ranges have been saved to Google Sheets and will appear for all interns.',
+          'success'
+        );
+      }
+    } catch (err) {
+      console.error('Catalog save error:', err);
+      setCatalogSource('Saved Locally (Sync Pending)');
+      if (options.notify) {
+        showModal(
+          'Saved Locally',
+          'Changes were saved on this device, but could not reach Google Sheets right now. Tap Publish again when online.',
+          'warning'
+        );
+      }
+    } finally {
+      setIsSavingCatalog(false);
+    }
+  };
+
+  const handleResetCatalog = async () => {
+    try {
+      localStorage.removeItem('colgate_custom_catalog_v1');
+      localStorage.removeItem('colgate_custom_skus_v1');
+    } catch {}
+    await handleSaveCatalog(DEFAULT_SURVEY_CATALOG, DEFAULT_SKU_SIZE_RANGES, { notify: true });
+    if (!GOOGLE_SCRIPT_URL) {
+      setCatalogSource('Excel Built-in');
+    }
+  };
 
   const fetchCatalogFromSheet = () => {
     if (!GOOGLE_SCRIPT_URL) return;
@@ -292,11 +450,15 @@ export default function App() {
       .then((res) => res.json())
       .then((json) => {
         if (json.hasSheetCatalog && json.catalog) {
-          setSurveyCatalog({
+          const syncedCatalog = {
             toothpaste: json.catalog.toothpaste || {},
             toothbrush: json.catalog.toothbrush || {},
             mouthwash: json.catalog.mouthwash || {}
-          });
+          };
+          setSurveyCatalog(syncedCatalog);
+          try {
+            localStorage.setItem('colgate_custom_catalog_v1', JSON.stringify(syncedCatalog));
+          } catch {}
           setCatalogSource(
             json.catalogSheetName
               ? `Google Sheet (${json.catalogSheetName})`
@@ -308,16 +470,20 @@ export default function App() {
             Object.keys(json.catalog.toothbrush || {}).length > 0 ||
             Object.keys(json.catalog.mouthwash || {}).length > 0;
           if (hasAny) {
-            setSurveyCatalog({
+            const syncedCatalog = {
               toothpaste: json.catalog.toothpaste || {},
               toothbrush: json.catalog.toothbrush || {},
               mouthwash: json.catalog.mouthwash || {}
-            });
+            };
+            setSurveyCatalog(syncedCatalog);
             setCatalogSource('Google Sheet Synced');
           }
         }
         if (Array.isArray(json.skuRanges) && json.skuRanges.length > 0) {
           setSkuSizeRanges(json.skuRanges);
+          try {
+            localStorage.setItem('colgate_custom_skus_v1', JSON.stringify(json.skuRanges));
+          } catch {}
         }
       })
       .catch(() => {
@@ -434,13 +600,29 @@ export default function App() {
     if (!outletData.photoDataUrl) {
       showModal(
         'Photo Required',
-        'You cannot unlock the product sections without taking a photo of the outlet signboard first. Please tap the camera button to capture the live photo.',
+        'You cannot unlock the product sections without taking a photo of the outlet signboard first. Please turn ON your location and capture the live photo.',
+        'error'
+      );
+      return;
+    }
+    if (!outletData.lat || !outletData.lng) {
+      showModal(
+        'Location Required',
+        'GPS coordinates are required. Please turn ON your device Location (GPS) and detect your location before continuing.',
         'error'
       );
       return;
     }
     if (!outletData.name.trim()) {
       showModal('Outlet Name Required', 'Please enter or verify the Outlet Name before continuing.', 'error');
+      return;
+    }
+    if (!outletData.address.trim()) {
+      showModal(
+        'Outlet Address Required',
+        'Please write the Outlet Address before unlocking the product survey sections.',
+        'error'
+      );
       return;
     }
     if (!outletData.type) {
@@ -525,7 +707,8 @@ export default function App() {
         outletName: outletData.name.trim(),
         outletType: outletData.type,
         mobile: outletData.mobile.trim(),
-        address: outletData.address.trim() || 'GPS Location Recorded',
+        address: outletData.address.trim(),
+        locationName: outletData.locationName || '',
         lat: parseFloat(outletData.lat) || null,
         lng: parseFloat(outletData.lng) || null,
         date: todayStr,
@@ -552,6 +735,7 @@ export default function App() {
         type: '',
         lat: '',
         lng: '',
+        locationName: '',
         timestamp: ''
       });
       setIsOutletSaved(false);
@@ -675,17 +859,29 @@ export default function App() {
   // ==========================================================================
   if (currentUser.userType === 'admin') {
     return (
-      <AdminDashboard
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        adminTab={adminTab}
-        setAdminTab={setAdminTab}
-        localOutlets={coveredOutlets}
-        catalog={surveyCatalog}
-        skuRanges={skuSizeRanges}
-        catalogSource={catalogSource}
-        onRefreshCatalog={fetchCatalogFromSheet}
-      />
+      <>
+        <AdminDashboard
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          adminTab={adminTab}
+          setAdminTab={setAdminTab}
+          localOutlets={coveredOutlets}
+          catalog={surveyCatalog}
+          skuRanges={skuSizeRanges}
+          catalogSource={catalogSource}
+          isSavingCatalog={isSavingCatalog}
+          onRefreshCatalog={fetchCatalogFromSheet}
+          onSaveCatalog={handleSaveCatalog}
+          onResetCatalog={handleResetCatalog}
+        />
+        <Modal
+          isOpen={modal.isOpen}
+          title={modal.title}
+          message={modal.message}
+          type={modal.type}
+          onClose={() => setModal({ ...modal, isOpen: false })}
+        />
+      </>
     );
   }
 
@@ -893,7 +1089,10 @@ const AdminDashboard = ({
   catalog,
   skuRanges,
   catalogSource,
-  onRefreshCatalog
+  isSavingCatalog,
+  onRefreshCatalog,
+  onSaveCatalog,
+  onResetCatalog
 }) => {
   const [remoteOutlets, setRemoteOutlets] = useState(null);
   const [remoteUsers, setRemoteUsers] = useState(null);
@@ -1208,6 +1407,12 @@ const AdminDashboard = ({
                         {o.address && (
                           <p className="text-[11px] text-gray-600">{o.address}</p>
                         )}
+                        {o.locationName && (
+                          <p className="text-[11px] font-semibold text-red-700 flex items-center gap-1">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span>{o.locationName}</span>
+                          </p>
+                        )}
                         <p className="text-[11px] text-gray-500">
                           Visited on <strong>{o.date}</strong> at {o.time}
                           {o.mobile ? ` • Mob: ${o.mobile}` : ''}
@@ -1319,69 +1524,17 @@ const AdminDashboard = ({
           </div>
         )}
 
+        {/* TAB 4: MASTER CATALOG & SKU RANGES */}
         {adminTab === 'catalog' && (
-          <div className="space-y-4">
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-1 gap-2">
-                <h2 className="text-base font-black text-gray-900 flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-red-600" /> Product Master Lists
-                </h2>
-                <div className="flex items-center gap-2">
-                  {GOOGLE_SCRIPT_URL && onRefreshCatalog && (
-                    <button
-                      type="button"
-                      onClick={onRefreshCatalog}
-                      className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-100"
-                    >
-                      Sync Sheet
-                    </button>
-                  )}
-                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    {catalogSource}
-                  </span>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500">
-                Complete Company & Brand directory (available in Toothpaste, Toothbrush & Mouthwash) and Toothpaste SKU Size Ranges.
-              </p>
-
-              <div className="mt-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">
-                  Toothpaste SKU Size Ranges ({skuRanges.length})
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {skuRanges.map((r) => (
-                    <span key={r} className="px-2.5 py-1 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs font-semibold">
-                      {r}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {(() => {
-              const allCompanies = {
-                ...(catalog.toothpaste || {}),
-                ...(catalog.toothbrush || {}),
-                ...(catalog.mouthwash || {})
-              };
-              return (
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-2.5">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-red-700">
-                    All Companies & Brands ({Object.keys(allCompanies).length} Companies)
-                  </h3>
-                  <div className="divide-y divide-gray-100">
-                    {Object.entries(allCompanies).map(([comp, brands]) => (
-                      <div key={comp} className="py-2">
-                        <div className="text-xs font-bold text-gray-900">{comp}</div>
-                        <div className="text-[11px] text-gray-500 mt-0.5">{brands.join(', ')}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
+          <AdminCatalogManager
+            catalog={catalog}
+            skuRanges={skuRanges}
+            catalogSource={catalogSource}
+            isSavingCatalog={isSavingCatalog}
+            onRefreshCatalog={onRefreshCatalog}
+            onSaveCatalog={onSaveCatalog}
+            onResetCatalog={onResetCatalog}
+          />
         )}
       </main>
 
@@ -1413,18 +1566,1501 @@ const AdminDashboard = ({
 };
 
 // ============================================================================
-// 7. COVERED OUTLETS SECTION (Date Filter for Interns)
+// 6B. ADMIN CATALOG MANAGER (Add, Edit, Update & Delete Companies, Brands & SKUs)
+// ============================================================================
+const AdminCatalogManager = ({
+  catalog,
+  skuRanges,
+  catalogSource,
+  isSavingCatalog,
+  onRefreshCatalog,
+  onSaveCatalog,
+  onResetCatalog
+}) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [feedbackBanner, setFeedbackBanner] = useState({ text: '', type: 'info' });
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [newCompanyBrands, setNewCompanyBrands] = useState('');
+
+  const [editingCompany, setEditingCompany] = useState(null);
+  const [editingCompanyDraft, setEditingCompanyDraft] = useState('');
+  const [confirmDeleteCompany, setConfirmDeleteCompany] = useState(null);
+
+  const [brandDrafts, setBrandDrafts] = useState({});
+  const [editingBrand, setEditingBrand] = useState(null);
+  const [editingBrandDraft, setEditingBrandDraft] = useState('');
+
+  const [newSkuInput, setNewSkuInput] = useState('');
+  const [editingSku, setEditingSku] = useState(null);
+  const [editingSkuDraft, setEditingSkuDraft] = useState('');
+
+  const showNotice = (text, type = 'success') => {
+    setFeedbackBanner({ text, type });
+    setTimeout(() => {
+      setFeedbackBanner((prev) => (prev.text === text ? { text: '', type: 'info' } : prev));
+    }, 3500);
+  };
+
+  const unifiedCompanies = (() => {
+    const merged = {};
+    ['toothpaste', 'toothbrush', 'mouthwash'].forEach((cat) => {
+      const catMap = (catalog && catalog[cat]) || {};
+      Object.entries(catMap).forEach(([comp, brands]) => {
+        if (!merged[comp]) merged[comp] = [];
+        (brands || []).forEach((b) => {
+          if (!merged[comp].includes(b)) merged[comp].push(b);
+        });
+      });
+    });
+    return merged;
+  })();
+
+  const buildNextCatalog = (nextUnifiedMap) => ({
+    toothpaste: nextUnifiedMap,
+    toothbrush: nextUnifiedMap,
+    mouthwash: nextUnifiedMap
+  });
+
+  const handleAddSku = (e) => {
+    e.preventDefault();
+    const clean = newSkuInput.trim();
+    if (!clean) return;
+    if (skuRanges.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+      showNotice(`"${clean}" is already in the SKU list.`, 'error');
+      return;
+    }
+    const updatedSkus = [...skuRanges, clean];
+    setNewSkuInput('');
+    onSaveCatalog(buildNextCatalog(unifiedCompanies), updatedSkus);
+    showNotice(`Added SKU range "${clean}".`);
+  };
+
+  const handleSaveEditedSku = (oldSku) => {
+    const clean = editingSkuDraft.trim();
+    if (!clean) return;
+    if (
+      clean.toLowerCase() !== oldSku.toLowerCase() &&
+      skuRanges.some((s) => s.toLowerCase() === clean.toLowerCase())
+    ) {
+      showNotice(`"${clean}" already exists.`, 'error');
+      return;
+    }
+    const updatedSkus = skuRanges.map((s) => (s === oldSku ? clean : s));
+    setEditingSku(null);
+    setEditingSkuDraft('');
+    onSaveCatalog(buildNextCatalog(unifiedCompanies), updatedSkus);
+    showNotice(`Updated SKU range to "${clean}".`);
+  };
+
+  const handleDeleteSku = (targetSku) => {
+    const updatedSkus = skuRanges.filter((s) => s !== targetSku);
+    onSaveCatalog(buildNextCatalog(unifiedCompanies), updatedSkus);
+    showNotice(`Removed SKU range "${targetSku}".`);
+  };
+
+  const handleAddCompany = (e) => {
+    e.preventDefault();
+    const cleanComp = newCompanyName.trim();
+    if (!cleanComp) {
+      showNotice('Please enter a company name.', 'error');
+      return;
+    }
+    if (Object.keys(unifiedCompanies).some((c) => c.toLowerCase() === cleanComp.toLowerCase())) {
+      showNotice(`Company "${cleanComp}" already exists in the catalog.`, 'error');
+      return;
+    }
+    const parsedBrands = newCompanyBrands
+      .split(',')
+      .map((b) => b.trim())
+      .filter(Boolean);
+
+    const nextMap = {
+      [cleanComp]: Array.from(new Set(parsedBrands)),
+      ...unifiedCompanies
+    };
+    setNewCompanyName('');
+    setNewCompanyBrands('');
+    onSaveCatalog(buildNextCatalog(nextMap), skuRanges);
+    showNotice(`Added company "${cleanComp}".`);
+  };
+
+  const handleSaveEditedCompany = (oldName) => {
+    const cleanNew = editingCompanyDraft.trim();
+    if (!cleanNew) return;
+    if (
+      cleanNew.toLowerCase() !== oldName.toLowerCase() &&
+      Object.keys(unifiedCompanies).some((c) => c.toLowerCase() === cleanNew.toLowerCase())
+    ) {
+      showNotice(`Company "${cleanNew}" already exists.`, 'error');
+      return;
+    }
+    const nextMap = {};
+    Object.entries(unifiedCompanies).forEach(([k, v]) => {
+      nextMap[k === oldName ? cleanNew : k] = v;
+    });
+    setEditingCompany(null);
+    setEditingCompanyDraft('');
+    onSaveCatalog(buildNextCatalog(nextMap), skuRanges);
+    showNotice(`Renamed company to "${cleanNew}".`);
+  };
+
+  const handleDeleteCompany = (compName) => {
+    const nextMap = { ...unifiedCompanies };
+    delete nextMap[compName];
+    setConfirmDeleteCompany(null);
+    onSaveCatalog(buildNextCatalog(nextMap), skuRanges);
+    showNotice(`Deleted company "${compName}".`);
+  };
+
+  const handleAddBrandToCompany = (compName) => {
+    const draft = (brandDrafts[compName] || '').trim();
+    if (!draft) return;
+    const existing = unifiedCompanies[compName] || [];
+    if (existing.some((b) => b.toLowerCase() === draft.toLowerCase())) {
+      showNotice(`Brand "${draft}" already exists under ${compName}.`, 'error');
+      return;
+    }
+    const nextMap = {
+      ...unifiedCompanies,
+      [compName]: [...existing, draft]
+    };
+    setBrandDrafts((prev) => ({ ...prev, [compName]: '' }));
+    onSaveCatalog(buildNextCatalog(nextMap), skuRanges);
+    showNotice(`Added brand "${draft}" to ${compName}.`);
+  };
+
+  const handleSaveEditedBrand = (compName, oldBrand) => {
+    const cleanBrand = editingBrandDraft.trim();
+    if (!cleanBrand) return;
+    const existing = unifiedCompanies[compName] || [];
+    if (
+      cleanBrand.toLowerCase() !== oldBrand.toLowerCase() &&
+      existing.some((b) => b.toLowerCase() === cleanBrand.toLowerCase())
+    ) {
+      showNotice(`Brand "${cleanBrand}" already exists under ${compName}.`, 'error');
+      return;
+    }
+    const nextMap = {
+      ...unifiedCompanies,
+      [compName]: existing.map((b) => (b === oldBrand ? cleanBrand : b))
+    };
+    setEditingBrand(null);
+    setEditingBrandDraft('');
+    onSaveCatalog(buildNextCatalog(nextMap), skuRanges);
+    showNotice(`Updated brand to "${cleanBrand}".`);
+  };
+
+  const handleDeleteBrand = (compName, targetBrand) => {
+    const existing = unifiedCompanies[compName] || [];
+    const nextMap = {
+      ...unifiedCompanies,
+      [compName]: existing.filter((b) => b !== targetBrand)
+    };
+    onSaveCatalog(buildNextCatalog(nextMap), skuRanges);
+    showNotice(`Removed brand "${targetBrand}".`);
+  };
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const filteredCompanies = Object.entries(unifiedCompanies).filter(([comp, brands]) => {
+    if (!normalizedSearch) return true;
+    return (
+      comp.toLowerCase().includes(normalizedSearch) ||
+      brands.some((b) => b.toLowerCase().includes(normalizedSearch))
+    );
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-black text-gray-900 flex items-center gap-2">
+              <Layers className="w-5 h-5 text-red-600" /> Manage Companies, Brands & SKUs
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Changes made here automatically update the intern survey dropdowns.
+            </p>
+          </div>
+          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+            {isSavingCatalog ? 'Publishing...' : catalogSource}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            disabled={isSavingCatalog}
+            onClick={() =>
+              onSaveCatalog(buildNextCatalog(unifiedCompanies), skuRanges, { notify: true })
+            }
+            className="flex-1 sm:flex-none bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-60"
+          >
+            {isSavingCatalog ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <UploadCloud className="w-3.5 h-3.5" />
+            )}
+            <span>{GOOGLE_SCRIPT_URL ? 'Publish to Google Sheet' : 'Save Catalog Changes'}</span>
+          </button>
+
+          {GOOGLE_SCRIPT_URL && onRefreshCatalog && (
+            <button
+              type="button"
+              onClick={onRefreshCatalog}
+              className="text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-xl flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Pull from Sheet</span>
+            </button>
+          )}
+
+          {!confirmReset ? (
+            <button
+              type="button"
+              onClick={() => setConfirmReset(true)}
+              className="text-xs font-bold text-gray-500 hover:text-red-600 px-2.5 py-2 rounded-xl flex items-center gap-1 ml-auto"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Excel Defaults</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5 ml-auto bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-xl">
+              <span className="text-[11px] font-bold text-amber-900">Restore original list?</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmReset(false);
+                  onResetCatalog();
+                }}
+                className="text-[11px] font-black text-red-600 hover:underline px-1"
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmReset(false)}
+                className="text-[11px] font-bold text-gray-600 hover:underline px-1"
+              >
+                No
+              </button>
+            </div>
+          )}
+        </div>
+
+        {feedbackBanner.text && (
+          <div
+            className={`p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${
+              feedbackBanner.type === 'error'
+                ? 'bg-red-50 text-red-700 border border-red-200'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            }`}
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{feedbackBanner.text}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
+            Toothpaste SKU Size Ranges ({skuRanges.length})
+          </h3>
+        </div>
+
+        <form onSubmit={handleAddSku} className="flex gap-2">
+          <input
+            type="text"
+            value={newSkuInput}
+            onChange={(e) => setNewSkuInput(e.target.value)}
+            placeholder="Add new SKU range (e.g. 250 gm - 275 gm)"
+            className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-xs font-semibold bg-gray-50 focus:ring-2 focus:ring-red-500"
+          />
+          <button
+            type="submit"
+            className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1 shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add SKU
+          </button>
+        </form>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          {skuRanges.map((r) =>
+            editingSku === r ? (
+              <div
+                key={r}
+                className="flex items-center gap-1 bg-red-50 border border-red-300 rounded-xl px-2 py-1"
+              >
+                <input
+                  type="text"
+                  value={editingSkuDraft}
+                  onChange={(e) => setEditingSkuDraft(e.target.value)}
+                  className="bg-white border border-red-300 rounded-lg px-2 py-0.5 text-xs font-bold text-gray-900 w-32"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSaveEditedSku(r)}
+                  className="p-1 text-emerald-700 hover:bg-emerald-100 rounded"
+                  title="Save SKU"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingSku(null)}
+                  className="p-1 text-gray-500 hover:bg-gray-200 rounded"
+                  title="Cancel"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div
+                key={r}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-red-50 border border-red-200 text-red-900 text-xs font-semibold"
+              >
+                <span>{r}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingSku(r);
+                    setEditingSkuDraft(r);
+                  }}
+                  className="text-red-500 hover:text-red-800 p-0.5"
+                  title="Edit SKU"
+                >
+                  <Edit2 className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSku(r)}
+                  className="text-red-400 hover:text-red-700 p-0.5"
+                  title="Delete SKU"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      </div>
+
+      <form
+        onSubmit={handleAddCompany}
+        className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3"
+      >
+        <h3 className="text-xs font-black uppercase tracking-wider text-red-700 flex items-center gap-1.5">
+          <Plus className="w-4 h-4" /> Add New Company & Brands
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <input
+            type="text"
+            value={newCompanyName}
+            onChange={(e) => setNewCompanyName(e.target.value)}
+            placeholder="Company Name (e.g. Bashundhara)"
+            className="border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-semibold bg-gray-50 focus:ring-2 focus:ring-red-500"
+          />
+          <input
+            type="text"
+            value={newCompanyBrands}
+            onChange={(e) => setNewCompanyBrands(e.target.value)}
+            placeholder="Brands (comma-separated, e.g. Brand 1, Brand 2)"
+            className="border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-semibold bg-gray-50 focus:ring-2 focus:ring-red-500"
+          />
+        </div>
+        <button
+          type="submit"
+          className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5"
+        >
+          <Plus className="w-4 h-4" /> Add Company to Catalog
+        </button>
+      </form>
+
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
+            All Companies & Brands ({filteredCompanies.length} of {Object.keys(unifiedCompanies).length})
+          </h3>
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search company or brand..."
+              className="w-full border border-gray-300 rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold bg-gray-50 focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {filteredCompanies.map(([comp, brands]) => {
+            const isEditingThisComp = editingCompany === comp;
+            const isConfirmingDelete = confirmDeleteCompany === comp;
+
+            return (
+              <div
+                key={comp}
+                className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  {isEditingThisComp ? (
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <input
+                        type="text"
+                        value={editingCompanyDraft}
+                        onChange={(e) => setEditingCompanyDraft(e.target.value)}
+                        className="flex-1 bg-white border border-red-300 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-900"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEditedCompany(comp)}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCompany(null)}
+                        className="px-2.5 py-1.5 rounded-lg bg-gray-200 text-gray-700 text-xs font-bold"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-black text-gray-900 truncate">{comp}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600 shrink-0">
+                          {brands.length} {brands.length === 1 ? 'brand' : 'brands'}
+                        </span>
+                      </div>
+
+                      {!isConfirmingDelete ? (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCompany(comp);
+                              setEditingCompanyDraft(comp);
+                            }}
+                            className="p-1.5 rounded-lg text-gray-600 hover:text-red-600 hover:bg-white transition-colors"
+                            title="Rename Company"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteCompany(comp)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-white transition-colors"
+                            title="Delete Company"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 px-2.5 py-1 rounded-xl shrink-0">
+                          <span className="text-[11px] font-bold text-red-800">Delete?</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCompany(comp)}
+                            className="text-[11px] font-black text-red-600 hover:underline px-1"
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteCompany(null)}
+                            className="text-[11px] font-bold text-gray-600 hover:underline px-1"
+                          >
+                            No
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {brands.length === 0 ? (
+                    <span className="text-[11px] text-gray-400 italic">No brands added yet</span>
+                  ) : (
+                    brands.map((bName) => {
+                      const isEditingThisBrand =
+                        editingBrand &&
+                        editingBrand.company === comp &&
+                        editingBrand.oldBrand === bName;
+
+                      return isEditingThisBrand ? (
+                        <div
+                          key={bName}
+                          className="flex items-center gap-1 bg-white border border-red-300 rounded-lg px-2 py-1"
+                        >
+                          <input
+                            type="text"
+                            value={editingBrandDraft}
+                            onChange={(e) => setEditingBrandDraft(e.target.value)}
+                            className="border border-gray-200 rounded px-2 py-0.5 text-xs font-semibold w-32"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditedBrand(comp, bName)}
+                            className="p-0.5 text-emerald-700 hover:bg-emerald-50 rounded"
+                            title="Save Brand"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingBrand(null)}
+                            className="p-0.5 text-gray-500 hover:bg-gray-100 rounded"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span
+                          key={bName}
+                          className="inline-flex items-center gap-1.5 bg-white border border-gray-200 px-2.5 py-1 rounded-lg text-xs font-medium text-gray-800 shadow-2xs"
+                        >
+                          <span>{bName}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingBrand({ company: comp, oldBrand: bName });
+                              setEditingBrandDraft(bName);
+                            }}
+                            className="text-gray-400 hover:text-red-600"
+                            title="Edit Brand"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBrand(comp, bName)}
+                            className="text-gray-400 hover:text-red-600"
+                            title="Remove Brand"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={brandDrafts[comp] || ''}
+                    onChange={(e) =>
+                      setBrandDrafts((prev) => ({ ...prev, [comp]: e.target.value }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddBrandToCompany(comp);
+                      }
+                    }}
+                    placeholder={`+ Add new brand to ${comp}...`}
+                    className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-red-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddBrandToCompany(comp)}
+                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1 shrink-0"
+                  >
+                    <Plus className="w-3 h-3" /> Add Brand
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 7. OUTLET INFORMATION SECTION (Strict GPS-ON Photo Gate + Location Name + Required Address)
+// ============================================================================
+const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
+  const [cameraActive, setCameraActive] = useState(false);
+  const [isOpeningCamera, setIsOpeningCamera] = useState(false);
+  const [isCheckingGps, setIsCheckingGps] = useState(false);
+  const [isResolvingPlace, setIsResolvingPlace] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState(() => (data.lat && data.lng ? 'active' : 'idle'));
+  const [gpsErrorMsg, setGpsErrorMsg] = useState('');
+  const [isRunningOcr, setIsRunningOcr] = useState(false);
+
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const stopCameraStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+  };
+
+  useEffect(() => {
+    return () => stopCameraStream();
+  }, []);
+
+  const acquireLiveGps = ({ silent = false } = {}) => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        const msg = 'Location (GPS) is not supported on this device/browser.';
+        setGpsStatus('off');
+        setGpsErrorMsg(msg);
+        if (!silent) {
+          showModal('Location Required', msg, 'error');
+        }
+        resolve(null);
+        return;
+      }
+
+      setIsCheckingGps(true);
+      setGpsErrorMsg('');
+
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const lat = pos.coords.latitude.toFixed(6);
+          const lng = pos.coords.longitude.toFixed(6);
+          const nowTimestamp = new Date().toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+
+          setGpsStatus('active');
+          setIsCheckingGps(false);
+
+          setData((prev) => ({
+            ...prev,
+            lat,
+            lng,
+            timestamp: prev.timestamp || nowTimestamp
+          }));
+
+          setIsResolvingPlace(true);
+          const placeName = await fetchLocationNameFromCoords(lat, lng);
+          setIsResolvingPlace(false);
+
+          if (placeName) {
+            setData((prev) => ({
+              ...prev,
+              locationName: placeName
+            }));
+          }
+
+          resolve({ lat, lng, locationName: placeName, timestamp: nowTimestamp });
+        },
+        (err) => {
+          setIsCheckingGps(false);
+          setGpsStatus('off');
+
+          let reason =
+            'Your device Location (GPS) appears to be OFF or permission was denied. Please turn ON Location and allow access to take a signboard photo.';
+          if (err && err.code === 1) {
+            reason =
+              'Location access was denied. Please allow Location permission in your browser settings and turn ON GPS to take a photo.';
+          } else if (err && err.code === 2) {
+            reason =
+              'Location is currently OFF or unavailable. Please turn ON your phone GPS / Location services first.';
+          } else if (err && err.code === 3) {
+            reason =
+              'GPS signal timed out. Please make sure Location is ON and step near an open area, then try again.';
+          }
+
+          setGpsErrorMsg(reason);
+          if (!silent) {
+            showModal('Turn ON Location to Take Photo', reason, 'error');
+          }
+          resolve(null);
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      );
+    });
+  };
+
+  useEffect(() => {
+    if (!data.lat || !data.lng) {
+      acquireLiveGps({ silent: true });
+    } else if (!data.locationName) {
+      setIsResolvingPlace(true);
+      fetchLocationNameFromCoords(data.lat, data.lng).then((placeName) => {
+        setIsResolvingPlace(false);
+        if (placeName) {
+          setData((prev) => ({ ...prev, locationName: placeName }));
+        }
+      });
+    }
+  }, []);
+
+  const handleStartLiveCamera = async () => {
+    setIsOpeningCamera(true);
+    try {
+      const gpsResult = await acquireLiveGps({ silent: false });
+      if (!gpsResult) {
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showModal(
+          'Camera Unavailable',
+          'Live camera access requires HTTPS and a compatible mobile browser. Please open the app over HTTPS (Netlify) in Chrome/Safari.',
+          'error'
+        );
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+        audio: false
+      });
+
+      streamRef.current = stream;
+      setCameraActive(true);
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 60);
+    } catch (err) {
+      console.error('Camera start error:', err);
+      showModal(
+        'Camera Permission Required',
+        'Could not open the live rear camera. Please allow camera permission and try again (gallery uploads are disabled).',
+        'error'
+      );
+    } finally {
+      setIsOpeningCamera(false);
+    }
+  };
+
+  const runSignboardOcr = async (base64DataUrl) => {
+    if (!GEMINI_API_KEY) return;
+    setIsRunningOcr(true);
+    try {
+      const base64Body = base64DataUrl.split(',')[1];
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: 'Extract shop signboard details as strict JSON with keys: outletName, mobile, address. Leave empty string if unreadable.'
+                  },
+                  { inlineData: { mimeType: 'image/jpeg', data: base64Body } }
+                ]
+              }
+            ]
+          })
+        }
+      );
+      const json = await res.json();
+      const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const match = rawText.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        setData((prev) => ({
+          ...prev,
+          name: prev.name || parsed.outletName || '',
+          mobile: prev.mobile || parsed.mobile || '',
+          address: prev.address || parsed.address || ''
+        }));
+      }
+    } catch {
+      // Manual entry remains available
+    } finally {
+      setIsRunningOcr(false);
+    }
+  };
+
+  const handleCaptureFrame = () => {
+    if (!data.lat || !data.lng) {
+      stopCameraStream();
+      showModal(
+        'Location Required',
+        'GPS location must be active to capture the outlet signboard photo. Please turn ON Location first.',
+        'error'
+      );
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+
+    const maxWidth = 800;
+    const scale = Math.min(1, maxWidth / video.videoWidth);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const compressedUrl = canvas.toDataURL('image/jpeg', 0.65);
+    const capturedTime = new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+
+    stopCameraStream();
+
+    setData((prev) => ({
+      ...prev,
+      photoDataUrl: compressedUrl,
+      timestamp: capturedTime
+    }));
+
+    runSignboardOcr(compressedUrl);
+  };
+
+  const hasValidGps = Boolean(data.lat && data.lng);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
+              <Camera className="w-4 h-4 text-red-600" /> 1. Live Signboard Photo
+              <span className="text-red-600">*</span>
+            </h2>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              Live camera capture only (no gallery uploads). Location (GPS) must be ON.
+            </p>
+          </div>
+          {data.photoDataUrl && (
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+              Photo Captured
+            </span>
+          )}
+        </div>
+
+        <div
+          className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+            hasValidGps
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : gpsStatus === 'off'
+              ? 'bg-red-50 border-red-200 text-red-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          }`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {isCheckingGps ? (
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            ) : hasValidGps ? (
+              <Navigation className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            )}
+            <span className="font-bold leading-snug">
+              {isCheckingGps
+                ? 'Checking device GPS location...'
+                : hasValidGps
+                ? `Location ON${data.locationName ? ` • ${data.locationName}` : ' • GPS Ready for Photo'}`
+                : 'Location is OFF — Turn ON GPS to unlock the camera'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => acquireLiveGps({ silent: false })}
+            disabled={isCheckingGps}
+            className="text-[11px] font-extrabold bg-white px-2.5 py-1 rounded-lg border border-current/20 shadow-2xs shrink-0 hover:opacity-90"
+          >
+            {hasValidGps ? 'Refresh GPS' : 'Check GPS'}
+          </button>
+        </div>
+
+        {gpsErrorMsg && !hasValidGps && (
+          <p className="text-[11px] font-semibold text-red-600 px-1">{gpsErrorMsg}</p>
+        )}
+
+        {cameraActive ? (
+          <div className="space-y-3">
+            <div className="relative rounded-2xl overflow-hidden bg-black aspect-[4/3] border-2 border-red-500">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute top-2.5 left-2.5 bg-black/70 text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>
+                  GPS ON {data.locationName ? `• ${data.locationName}` : `(${data.lat}, ${data.lng})`}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={stopCameraStream}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5"
+              >
+                <X className="w-4 h-4" /> Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCaptureFrame}
+                className="bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-bold text-xs shadow-md flex items-center justify-center gap-1.5"
+              >
+                <Camera className="w-4 h-4" /> Capture Photo
+              </button>
+            </div>
+          </div>
+        ) : data.photoDataUrl ? (
+          <div className="space-y-2.5">
+            <div className="relative rounded-2xl overflow-hidden border border-gray-200 bg-slate-100">
+              <img
+                src={data.photoDataUrl}
+                alt="Captured Outlet Signboard"
+                className="w-full max-h-60 object-cover"
+              />
+              {isRunningOcr && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xs font-bold gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Reading signboard text...
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleStartLiveCamera}
+              disabled={isOpeningCamera || isCheckingGps}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              <Camera className="w-4 h-4" /> Retake Live Signboard Photo
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleStartLiveCamera}
+            disabled={isOpeningCamera || isCheckingGps}
+            className={`w-full border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.99] ${
+              hasValidGps
+                ? 'border-red-300 bg-red-50/40 hover:bg-red-50 text-red-700'
+                : 'border-gray-300 bg-gray-50 text-gray-500 hover:border-red-300'
+            }`}
+          >
+            {isOpeningCamera || isCheckingGps ? (
+              <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+            ) : (
+              <div
+                className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm ${
+                  hasValidGps ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-500'
+                }`}
+              >
+                <Camera className="w-6 h-6" />
+              </div>
+            )}
+            <span className="text-sm font-black">
+              {isOpeningCamera
+                ? 'Verifying GPS & Opening Camera...'
+                : hasValidGps
+                ? 'Take Live Signboard Photo'
+                : 'Turn ON Location to Take Photo'}
+            </span>
+            <span className="text-[11px] text-gray-500 text-center">
+              {hasValidGps
+                ? 'Tap to open rear camera and capture outlet signboard'
+                : 'Camera is locked while Location (GPS) is OFF'}
+            </span>
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
+            <Compass className="w-4 h-4 text-red-600" /> 2. GPS & Timestamp Data
+          </h2>
+          <button
+            type="button"
+            onClick={() => acquireLiveGps({ silent: false })}
+            disabled={isCheckingGps}
+            className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-100 flex items-center gap-1"
+          >
+            {isCheckingGps ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <MapPin className="w-3 h-3" />
+            )}
+            <span>Detect GPS Now</span>
+          </button>
+        </div>
+
+        <div className="p-3 rounded-xl bg-red-50/70 border border-red-100">
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-red-800 mb-1">
+            Location Name (Auto-Detected from GPS)
+          </label>
+          <div className="flex items-center gap-2">
+            {isResolvingPlace ? (
+              <Loader2 className="w-4 h-4 animate-spin text-red-600 shrink-0" />
+            ) : (
+              <MapPin className="w-4 h-4 text-red-600 shrink-0" />
+            )}
+            <input
+              type="text"
+              readOnly
+              value={
+                isResolvingPlace
+                  ? 'Detecting location name...'
+                  : data.locationName ||
+                    (hasValidGps ? 'Location name unavailable (GPS recorded)' : 'Turn ON GPS to detect area, city')
+              }
+              className="w-full bg-transparent text-xs font-extrabold text-gray-900 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">
+              Latitude
+            </label>
+            <input
+              type="text"
+              readOnly
+              value={data.lat || ''}
+              placeholder="Auto-detected"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono font-bold bg-slate-50 text-gray-800"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">
+              Longitude
+            </label>
+            <input
+              type="text"
+              readOnly
+              value={data.lng || ''}
+              placeholder="Auto-detected"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono font-bold bg-slate-50 text-gray-800"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1 flex items-center gap-1">
+            <Clock className="w-3 h-3 text-red-500" /> Photo / Survey Timestamp
+          </label>
+          <input
+            type="text"
+            readOnly
+            value={data.timestamp || ''}
+            placeholder="Auto-recorded on GPS & photo capture"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold bg-slate-50 text-gray-800"
+          />
+        </div>
+      </div>
+
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
+        <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
+          <Store className="w-4 h-4 text-red-600" /> 3. Outlet Details
+        </h2>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-700 mb-1">
+            Outlet Name <span className="text-red-600">*</span>
+          </label>
+          <input
+            type="text"
+            value={data.name}
+            onChange={(e) => setData({ ...data, name: e.target.value })}
+            placeholder="e.g. Rahim General Store"
+            className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-700 mb-1">
+            Outlet Type <span className="text-red-600">*</span>
+          </label>
+          <select
+            value={data.type}
+            onChange={(e) => setData({ ...data, type: e.target.value })}
+            className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500"
+          >
+            <option value="">-- Select Outlet Type --</option>
+            {OUTLET_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-700 mb-1">
+            Outlet Address <span className="text-red-600">*</span>
+          </label>
+          <textarea
+            rows={2}
+            value={data.address}
+            onChange={(e) => setData({ ...data, address: e.target.value })}
+            placeholder="Write full shop address (House, Road, Block, Market)..."
+            className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-700 mb-1">
+            Owner / Shop Mobile Number (Optional)
+          </label>
+          <input
+            type="tel"
+            value={data.mobile}
+            onChange={(e) => setData({ ...data, mobile: e.target.value })}
+            placeholder="e.g. 017XXXXXXXX"
+            className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={onSave}
+          className={`w-full py-3.5 rounded-2xl font-bold text-sm shadow-lg transition-all active:scale-[0.99] flex items-center justify-center gap-2 ${
+            isSaved
+              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/25'
+              : 'bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-700 hover:to-rose-800 text-white shadow-red-600/30'
+          }`}
+        >
+          {isSaved ? <CheckCircle2 className="w-5 h-5" /> : <Lock className="w-4 h-4" />}
+          <span>{isSaved ? 'Outlet Saved — Update Details' : 'Save Outlet & Unlock Product Pages'}</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 8. PRODUCT VISIBILITY SECTION (Toothpaste, Toothbrush & Mouthwash)
+// ============================================================================
+const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalog, skuRanges }) => {
+  const categoryMap = (catalog && catalog[category]) || {};
+  const companyNames = Object.keys(categoryMap);
+
+  const addCompanySection = () => {
+    setData((prev) => [
+      ...prev,
+      {
+        id: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        company: '',
+        customCompany: '',
+        customBrandDraft: '',
+        brands: [],
+        skus: [],
+        totalQty: ''
+      }
+    ]);
+  };
+
+  const updateEntry = (id, patch) => {
+    setData((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+
+  const removeEntry = (id) => {
+    setData((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const toggleItemInArray = (arr, value) =>
+    arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
+
+  const handleAddManualBrand = (entry) => {
+    const clean = (entry.customBrandDraft || '').trim();
+    if (!clean) return;
+    if (entry.brands.includes(clean)) {
+      updateEntry(entry.id, { customBrandDraft: '' });
+      return;
+    }
+    updateEntry(entry.id, {
+      brands: [...entry.brands, clean],
+      customBrandDraft: ''
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-black text-gray-900">{title} Visibility</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Add each company available in this outlet{hasSKU ? ', select brands, SKU ranges & total stock' : ' and select visible brands'}.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={addCompanySection}
+          className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-sm flex items-center gap-1.5 shrink-0 active:scale-95 transition-all"
+        >
+          <Plus className="w-4 h-4" /> Add Section
+        </button>
+      </div>
+
+      {data.length === 0 ? (
+        <div className="bg-white border-2 border-dashed border-gray-200 rounded-2xl p-8 text-center space-y-3">
+          <p className="text-xs font-semibold text-gray-500">
+            No {title.toLowerCase()} companies added for this outlet yet.
+          </p>
+          <button
+            type="button"
+            onClick={addCompanySection}
+            className="inline-flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-4 py-2 rounded-xl text-xs font-bold"
+          >
+            <Plus className="w-4 h-4" /> Add First {title} Company
+          </button>
+        </div>
+      ) : (
+        data.map((entry, idx) => {
+          const isOther = entry.company === '__OTHER__';
+          const availableBrands = !isOther && entry.company ? categoryMap[entry.company] || [] : [];
+
+          return (
+            <div
+              key={entry.id}
+              className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200/80 space-y-4 relative"
+            >
+              <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                <span className="text-xs font-black uppercase tracking-wider text-red-700">
+                  {title} Company #{idx + 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeEntry(entry.id)}
+                  className="text-gray-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors"
+                  title="Remove Section"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Company Name</label>
+                <select
+                  value={entry.company}
+                  onChange={(e) =>
+                    updateEntry(entry.id, {
+                      company: e.target.value,
+                      customCompany: '',
+                      customBrandDraft: '',
+                      brands: []
+                    })
+                  }
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm font-bold text-gray-900 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500"
+                >
+                  <option value="">-- Select Company --</option>
+                  {companyNames.map((comp) => (
+                    <option key={comp} value={comp}>
+                      {comp}
+                    </option>
+                  ))}
+                  <option value="__OTHER__">Other (Write Company & Brand Manually)</option>
+                </select>
+              </div>
+
+              {isOther && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Write Company Name
+                  </label>
+                  <input
+                    type="text"
+                    value={entry.customCompany || ''}
+                    onChange={(e) => updateEntry(entry.id, { customCompany: e.target.value })}
+                    placeholder="Enter company name..."
+                    className="w-full border border-red-200 rounded-xl px-3 py-2 text-sm font-semibold bg-red-50/40 focus:bg-white focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+              )}
+
+              {entry.company && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-gray-700">
+                    Select Brand(s) Available{' '}
+                    <span className="text-[11px] font-medium text-gray-400">
+                      ({entry.brands.length} selected)
+                    </span>
+                  </label>
+
+                  {!isOther && availableBrands.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {availableBrands.map((brand) => {
+                        const selected = entry.brands.includes(brand);
+                        return (
+                          <button
+                            key={brand}
+                            type="button"
+                            onClick={() =>
+                              updateEntry(entry.id, {
+                                brands: toggleItemInArray(entry.brands, brand)
+                              })
+                            }
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                              selected
+                                ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                                : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-red-300'
+                            }`}
+                          >
+                            {selected && <Check className="w-3.5 h-3.5" />}
+                            <span>{brand}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {entry.brands.filter((b) => !availableBrands.includes(b)).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {entry.brands
+                        .filter((b) => !availableBrands.includes(b))
+                        .map((customB) => (
+                          <span
+                            key={customB}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-red-600 text-white text-xs font-bold"
+                          >
+                            <span>{customB}</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateEntry(entry.id, {
+                                  brands: entry.brands.filter((b) => b !== customB)
+                                })
+                              }
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </span>
+                        ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={entry.customBrandDraft || ''}
+                      onChange={(e) => updateEntry(entry.id, { customBrandDraft: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddManualBrand(entry);
+                        }
+                      }}
+                      placeholder={
+                        isOther
+                          ? 'Write brand name and tap Add...'
+                          : 'Other brand not listed? Write here...'
+                      }
+                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-xs font-semibold bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAddManualBrand(entry)}
+                      className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0"
+                    >
+                      + Add Brand
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {hasSKU && entry.company && (
+                <div className="space-y-2 pt-1">
+                  <label className="block text-xs font-bold text-gray-700">
+                    Select SKU Size Range(s){' '}
+                    <span className="text-[11px] font-medium text-gray-400">
+                      ({entry.skus.length} selected)
+                    </span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {(skuRanges || []).map((sku) => {
+                      const selected = entry.skus.includes(sku);
+                      return (
+                        <button
+                          key={sku}
+                          type="button"
+                          onClick={() =>
+                            updateEntry(entry.id, {
+                              skus: toggleItemInArray(entry.skus, sku)
+                            })
+                          }
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                            selected
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                              : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-slate-400'
+                          }`}
+                        >
+                          {selected && <Check className="w-3.5 h-3.5" />}
+                          <span>{sku}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {hasQty && entry.company && (
+                <div className="pt-1">
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Total Product Quantity for This Company (Pieces / Packs)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={entry.totalQty}
+                    onChange={(e) => updateEntry(entry.id, { totalQty: e.target.value })}
+                    placeholder="e.g. 100"
+                    className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-black text-gray-900 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// 9. COVERED OUTLETS SECTION (Date Filtered Coverage History)
 // ============================================================================
 const CoveredOutletsSection = ({ internId, localRecords }) => {
   const [dateFilter, setDateFilter] = useState(getLocalDateString(0));
   const [remoteRecords, setRemoteRecords] = useState(null);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const fetchCoverage = () => {
-    if (!GOOGLE_SCRIPT_URL || !internId) return;
-    setIsSyncing(true);
-    const url = `${GOOGLE_SCRIPT_URL}?type=coverage&internId=${encodeURIComponent(internId)}&date=${encodeURIComponent(dateFilter)}`;
-    fetch(url)
+  const fetchCoverage = (targetDate) => {
+    if (!GOOGLE_SCRIPT_URL) return;
+    setIsLoading(true);
+    const queryDate = targetDate ? `&date=${encodeURIComponent(targetDate)}` : '';
+    fetch(`${GOOGLE_SCRIPT_URL}?type=coverage&internId=${encodeURIComponent(internId)}${queryDate}`)
       .then((res) => res.json())
       .then((json) => {
         if (Array.isArray(json.outlets)) {
@@ -1437,57 +3073,64 @@ const CoveredOutletsSection = ({ internId, localRecords }) => {
         }
       })
       .catch(() => {})
-      .finally(() => setIsSyncing(false));
+      .finally(() => setIsLoading(false));
   };
 
   useEffect(() => {
-    fetchCoverage();
+    fetchCoverage(dateFilter);
   }, [internId, dateFilter]);
-
-  const normalizedLocal = localRecords.map((r) => ({
-    ...r,
-    date: normalizeDateString(r.date)
-  }));
-
-  const sourceList = remoteRecords !== null ? remoteRecords : normalizedLocal;
-  const filteredList = dateFilter
-    ? sourceList.filter((item) => item.date === dateFilter)
-    : sourceList;
 
   const todayStr = getLocalDateString(0);
   const yesterdayStr = getLocalDateString(-1);
 
+  const baseList = (remoteRecords !== null ? remoteRecords : localRecords).map((r) => ({
+    ...r,
+    date: normalizeDateString(r.date)
+  }));
+
+  const filteredOutlets = dateFilter
+    ? baseList.filter((item) => item.date === dateFilter)
+    : baseList;
+
   return (
     <div className="space-y-4">
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
-              <CheckSquare className="w-5 h-5 text-red-600" /> Covered Outlets
-            </h2>
-            <p className="text-xs text-gray-500">Outlets successfully submitted by {internId}</p>
-          </div>
-          {GOOGLE_SCRIPT_URL && (
-            <button
-              type="button"
-              onClick={fetchCoverage}
-              disabled={isSyncing}
-              className="p-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
-              title="Sync from Google Sheet"
-            >
-              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            </button>
-          )}
+      <div className="bg-gradient-to-br from-red-600 to-rose-700 text-white p-5 rounded-2xl shadow-md shadow-red-600/20 flex items-center justify-between">
+        <div>
+          <span className="text-[11px] font-bold uppercase tracking-wider text-red-100 block">
+            {dateFilter ? `Outlets Covered on ${dateFilter}` : 'Total Outlets Covered (All Dates)'}
+          </span>
+          <span className="text-3xl font-black mt-1 block">{filteredOutlets.length}</span>
+          <span className="text-[11px] text-red-100/90 mt-0.5 block">
+            Intern: {internId} • Counted after submission
+          </span>
+        </div>
+        {GOOGLE_SCRIPT_URL && (
+          <button
+            type="button"
+            onClick={() => fetchCoverage(dateFilter)}
+            disabled={isLoading}
+            className="p-2.5 bg-white/15 hover:bg-white/25 rounded-xl text-white transition-all"
+            title="Refresh from Google Sheet"
+          >
+            <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div className="flex items-center gap-2 text-xs font-bold text-gray-700">
+          <Calendar className="w-4 h-4 text-red-600" />
+          <span>Filter by Date</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setDateFilter(todayStr)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
               dateFilter === todayStr
-                ? 'bg-red-600 text-white border-red-600 shadow-sm'
-                : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                ? 'bg-red-600 text-white border-red-600'
+                : 'bg-gray-50 text-gray-700 border-gray-200'
             }`}
           >
             Today
@@ -1495,10 +3138,10 @@ const CoveredOutletsSection = ({ internId, localRecords }) => {
           <button
             type="button"
             onClick={() => setDateFilter(yesterdayStr)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
               dateFilter === yesterdayStr
-                ? 'bg-red-600 text-white border-red-600 shadow-sm'
-                : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                ? 'bg-red-600 text-white border-red-600'
+                : 'bg-gray-50 text-gray-700 border-gray-200'
             }`}
           >
             Yesterday
@@ -1506,822 +3149,198 @@ const CoveredOutletsSection = ({ internId, localRecords }) => {
           <button
             type="button"
             onClick={() => setDateFilter('')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
               dateFilter === ''
-                ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                ? 'bg-slate-900 text-white border-slate-900'
+                : 'bg-gray-50 text-gray-700 border-gray-200'
             }`}
           >
             All Dates
           </button>
-          <div className="flex items-center gap-1.5 ml-auto">
-            <Calendar className="w-4 h-4 text-gray-400" />
-            <input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(normalizeDateString(e.target.value))}
-              className="border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-gray-50 focus:ring-2 focus:ring-red-500"
-            />
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-r from-red-600 to-rose-700 text-white p-4 rounded-2xl flex items-center justify-between shadow-md shadow-red-600/20">
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-red-100 block">
-              {dateFilter ? `Covered on ${dateFilter}` : 'Total Covered Outlets'}
-            </span>
-            <span className="text-3xl font-black mt-0.5 block">{filteredList.length}</span>
-          </div>
-          <Store className="w-10 h-10 text-red-200/80" />
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(normalizeDateString(e.target.value))}
+            className="border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-gray-50 ml-auto"
+          />
         </div>
       </div>
 
-      {filteredList.length === 0 ? (
-        <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-gray-200 text-center">
-          <p className="text-sm font-semibold text-gray-500">
-            No outlets submitted {dateFilter ? `on ${dateFilter}` : 'yet'}.
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            An outlet appears here after you press <strong>Submit Survey Data</strong>.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredList.map((item) => (
+      <div className="space-y-2.5">
+        {isLoading ? (
+          <div className="bg-white p-8 rounded-2xl text-center text-xs font-bold text-gray-500 flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-red-600" /> Syncing covered outlets...
+          </div>
+        ) : filteredOutlets.length === 0 ? (
+          <div className="bg-white p-8 rounded-2xl border border-gray-100 text-center space-y-1">
+            <p className="text-sm font-bold text-gray-700">No outlets covered on this date</p>
+            <p className="text-xs text-gray-500">
+              Outlets appear here immediately after tapping <strong>Submit Survey Data</strong>.
+            </p>
+          </div>
+        ) : (
+          filteredOutlets.map((item) => (
             <div
               key={item.outletId}
               className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-start justify-between gap-3"
             >
               <div className="space-y-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-sm font-black text-gray-900">{item.outletName}</h3>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-100">
+                  <span className="text-sm font-black text-gray-900">{item.outletName}</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">
                     {item.outletType}
                   </span>
                 </div>
+                {item.locationName && (
+                  <p className="text-[11px] font-bold text-red-700 flex items-center gap-1">
+                    <MapPin className="w-3 h-3 shrink-0" />
+                    <span>{item.locationName}</span>
+                  </p>
+                )}
                 {item.address && <p className="text-xs text-gray-600">{item.address}</p>}
-                <p className="text-[11px] text-gray-400 font-medium">
-                  {item.date} • {item.time}
-                  {item.mobile ? ` • ${item.mobile}` : ''}
+                <p className="text-[11px] text-gray-400">
+                  Submitted on <strong>{item.date}</strong> at {item.time}
                 </p>
               </div>
-              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
-                Submitted
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
-// ============================================================================
-// 8. OUTLET SECTION COMPONENT (Live Camera Only + GPS + Optional OCR)
-// ============================================================================
-const OutletSection = ({ data, setData, onSave, isSaved, showModal }) => {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
-
-  const fetchLocation = () => {
-    if (!navigator.geolocation) {
-      showModal('GPS Unavailable', 'Your browser does not support GPS geolocation.', 'error');
-      return;
-    }
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setData((prev) => ({
-          ...prev,
-          lat: pos.coords.latitude.toFixed(6),
-          lng: pos.coords.longitude.toFixed(6),
-          timestamp: prev.timestamp || new Date().toLocaleString()
-        }));
-        setIsLocating(false);
-      },
-      () => {
-        setIsLocating(false);
-        showModal(
-          'Location Permission Needed',
-          'Could not detect GPS automatically. Please enable location permissions or enter coordinates manually.',
-          'warning'
-        );
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  };
-
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false
-      });
-      streamRef.current = stream;
-      setIsCameraOpen(true);
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-      }, 100);
-    } catch (err) {
-      console.error('Camera error:', err);
-      showModal(
-        'Camera Permission Required',
-        'Unable to access the rear camera. Please allow camera permission in your browser settings (gallery upload is disabled).',
-        'error'
-      );
-    }
-  };
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    setIsCameraOpen(false);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
-    };
-  }, []);
-
-  const analyzeSignboardWithGemini = async (base64Image) => {
-    if (!GEMINI_API_KEY) return;
-    setIsAnalyzing(true);
-    try {
-      const cleanBase64 = base64Image.split(',')[1];
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: 'Extract outlet signboard details as JSON with keys: name, mobile, address. Return only valid JSON.'
-                  },
-                  {
-                    inline_data: { mime_type: 'image/jpeg', data: cleanBase64 }
-                  }
-                ]
-              }
-            ]
-          })
-        }
-      );
-      const json = await res.json();
-      const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        setData((prev) => ({
-          ...prev,
-          name: parsed.name || prev.name,
-          mobile: parsed.mobile || prev.mobile,
-          address: parsed.address || prev.address
-        }));
-      }
-    } catch (e) {
-      console.warn('OCR skipped:', e);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const capturePhoto = () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-
-    const maxWidth = 800;
-    const scale = video.videoWidth > maxWidth ? maxWidth / video.videoWidth : 1;
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.65);
-    const nowTimestamp = new Date().toLocaleString();
-
-    setData((prev) => ({
-      ...prev,
-      photoDataUrl: compressedDataUrl,
-      timestamp: nowTimestamp
-    }));
-
-    stopCamera();
-    fetchLocation();
-    analyzeSignboardWithGemini(compressedDataUrl);
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-black text-gray-900">1. Outlet Information</h2>
-            <p className="text-xs text-gray-500">Live signboard photo is mandatory to unlock products</p>
-          </div>
-          {isSaved && (
-            <span className="text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Locked
-            </span>
-          )}
-        </div>
-
-        <div className="mb-5">
-          <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">
-            Signboard Live Photo <span className="text-red-500">*</span>
-          </label>
-
-          {isCameraOpen ? (
-            <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-red-500">
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-64 object-cover" />
-              <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-4">
-                <button
-                  type="button"
-                  onClick={capturePhoto}
-                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-full shadow-lg flex items-center gap-2 text-sm"
+              {item.photoUrl ? (
+                <a
+                  href={item.photoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 shrink-0"
                 >
-                  <Camera className="w-4 h-4" /> Capture Photo
-                </button>
-                <button
-                  type="button"
-                  onClick={stopCamera}
-                  className="bg-white/90 text-gray-800 font-bold px-4 py-2.5 rounded-full shadow text-sm"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : data.photoDataUrl ? (
-            <div className="relative rounded-2xl overflow-hidden border border-gray-200">
-              <img src={data.photoDataUrl} alt="Outlet Signboard" className="w-full h-56 object-cover" />
-              {!isSaved && (
-                <button
-                  type="button"
-                  onClick={startCamera}
-                  className="absolute bottom-3 right-3 bg-black/75 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 hover:bg-black"
-                >
-                  <Camera className="w-3.5 h-3.5" /> Retake Photo
-                </button>
-              )}
-              {isAnalyzing && (
-                <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-xs font-bold gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Reading Signboard...
-                </div>
+                  <span>Photo</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg shrink-0">
+                  Submitted
+                </span>
               )}
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={startCamera}
-              disabled={isSaved}
-              className="w-full h-44 border-2 border-dashed border-red-300 rounded-2xl bg-red-50/40 hover:bg-red-50 transition-colors flex flex-col items-center justify-center gap-2 text-red-700 disabled:opacity-50"
-            >
-              <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md shadow-red-600/25">
-                <Camera className="w-6 h-6" />
-              </div>
-              <span className="text-sm font-bold">Tap to Open Live Camera</span>
-              <span className="text-[11px] text-gray-500">Gallery uploads disabled • Auto-compresses to ~40 KB</span>
-            </button>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">
-              Outlet Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={data.name}
-              onChange={(e) => setData((prev) => ({ ...prev, name: e.target.value }))}
-              disabled={isSaved}
-              className="w-full border-gray-300 rounded-xl p-3 border text-sm font-semibold focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100"
-              placeholder="e.g. Rahim General Store"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">Mobile Number</label>
-              <input
-                type="tel"
-                value={data.mobile}
-                onChange={(e) => setData((prev) => ({ ...prev, mobile: e.target.value }))}
-                disabled={isSaved}
-                className="w-full border-gray-300 rounded-xl p-3 border text-sm font-semibold focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100"
-                placeholder="e.g. 017..."
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">
-                Outlet Type <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={data.type}
-                onChange={(e) => setData((prev) => ({ ...prev, type: e.target.value }))}
-                disabled={isSaved}
-                className="w-full border-gray-300 rounded-xl p-3 border text-sm font-semibold focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100 bg-white"
-              >
-                <option value="">Select Type</option>
-                {OUTLET_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">Address</label>
-            <textarea
-              value={data.address}
-              onChange={(e) => setData((prev) => ({ ...prev, address: e.target.value }))}
-              disabled={isSaved}
-              className="w-full border-gray-300 rounded-xl p-3 border text-sm font-medium focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100 resize-none"
-              rows={2}
-              placeholder="Store address details"
-            />
-          </div>
-
-          <div className="bg-gradient-to-br from-slate-50 to-red-50/25 p-4 rounded-xl border border-red-100/80 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5 uppercase tracking-wide">
-                <Compass className="w-4 h-4 text-red-600" /> GPS & Timestamp Data
-              </span>
-              <button
-                type="button"
-                onClick={fetchLocation}
-                disabled={isSaved || isLocating}
-                className="text-xs font-semibold text-red-600 bg-white border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors flex items-center gap-1 shadow-sm disabled:opacity-50"
-              >
-                {isLocating ? <Loader2 className="w-3.5 h-3.5 animate-spin text-red-600" /> : <MapPin className="w-3.5 h-3.5" />}
-                {isLocating ? 'Detecting...' : 'Detect GPS Now'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Latitude</label>
-                <input
-                  type="text"
-                  value={data.lat}
-                  onChange={(e) => setData((prev) => ({ ...prev, lat: e.target.value }))}
-                  disabled={isSaved}
-                  className="w-full bg-white border-gray-300 rounded-lg p-2.5 text-xs font-mono border focus:ring-2 focus:ring-red-500 disabled:bg-gray-100"
-                  placeholder="e.g. 23.8103"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Longitude</label>
-                <input
-                  type="text"
-                  value={data.lng}
-                  onChange={(e) => setData((prev) => ({ ...prev, lng: e.target.value }))}
-                  disabled={isSaved}
-                  className="w-full bg-white border-gray-300 rounded-lg p-2.5 text-xs font-mono border focus:ring-2 focus:ring-red-500 disabled:bg-gray-100"
-                  placeholder="e.g. 90.4125"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-gray-400" /> Survey Timestamp
-              </label>
-              <input
-                type="text"
-                value={data.timestamp}
-                onChange={(e) => setData((prev) => ({ ...prev, timestamp: e.target.value }))}
-                disabled={isSaved}
-                className="w-full bg-white border-gray-300 rounded-lg p-2.5 text-xs font-mono border focus:ring-2 focus:ring-red-500 disabled:bg-gray-100"
-                placeholder="Auto-detected upon photo capture"
-              />
-            </div>
-          </div>
-        </div>
-
-        {!isSaved ? (
-          <button
-            onClick={onSave}
-            className={`w-full mt-6 py-3.5 rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 ${
-              !data.photoDataUrl || !data.name || !data.type
-                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                : 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-red-600/25 hover:from-red-700 hover:to-red-800'
-            }`}
-          >
-            <Lock className="w-4 h-4" /> Save & Unlock Product Sections
-          </button>
-        ) : (
-          <div className="w-full mt-6 bg-emerald-50 text-emerald-800 py-3 rounded-xl font-bold text-center border border-emerald-200 flex items-center justify-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" /> Outlet Info Locked & Products Unlocked
-          </div>
+          ))
         )}
       </div>
-
-      <canvas ref={canvasRef} className="hidden" />
     </div>
   );
 };
 
 // ============================================================================
-// 9. PRODUCT SECTION COMPONENT (Toothpaste, Toothbrush, Mouthwash)
-// ============================================================================
-const ProductSection = ({ category, title, data, setData, hasSKU, hasQty, catalog, skuRanges }) => {
-  const categoryCatalog = (catalog && catalog[category]) || DEFAULT_SURVEY_CATALOG[category] || {};
-  const activeSkuRanges = skuRanges || DEFAULT_SKU_SIZE_RANGES;
-
-  const addCompanyEntry = () => {
-    setData([
-      ...data,
-      {
-        id: Date.now(),
-        company: '',
-        customCompany: '',
-        customBrandDraft: '',
-        brands: [],
-        skus: [],
-        totalQty: ''
-      }
-    ]);
-  };
-
-  const removeCompanyEntry = (entryId) => {
-    setData(data.filter((item) => item.id !== entryId));
-  };
-
-  const updateCompany = (entryId, company) => {
-    setData(
-      data.map((item) => {
-        if (item.id === entryId) {
-          return {
-            ...item,
-            company,
-            customCompany: '',
-            customBrandDraft: '',
-            brands: [],
-            skus: [],
-            totalQty: ''
-          };
-        }
-        return item;
-      })
-    );
-  };
-
-  const updateField = (entryId, field, value) => {
-    setData(data.map((item) => (item.id === entryId ? { ...item, [field]: value } : item)));
-  };
-
-  const toggleBrand = (entryId, brandName) => {
-    setData(
-      data.map((item) => {
-        if (item.id !== entryId) return item;
-        const brandsList = item.brands || [];
-        if (brandsList.includes(brandName)) {
-          return { ...item, brands: brandsList.filter((b) => b !== brandName) };
-        }
-        return { ...item, brands: [...brandsList, brandName] };
-      })
-    );
-  };
-
-  const addCustomBrand = (entryId) => {
-    setData(
-      data.map((item) => {
-        if (item.id !== entryId) return item;
-        const newBrand = (item.customBrandDraft || '').trim();
-        if (!newBrand) return item;
-        const brandsList = item.brands || [];
-        const updatedBrands = brandsList.includes(newBrand) ? brandsList : [...brandsList, newBrand];
-        return { ...item, brands: updatedBrands, customBrandDraft: '' };
-      })
-    );
-  };
-
-  const toggleSku = (entryId, skuRange) => {
-    setData(
-      data.map((item) => {
-        if (item.id !== entryId) return item;
-        const skusList = item.skus || [];
-        if (skusList.includes(skuRange)) {
-          return { ...item, skus: skusList.filter((s) => s !== skuRange) };
-        }
-        return { ...item, skus: [...skusList, skuRange] };
-      })
-    );
-  };
-
-  const updateTotalQty = (entryId, totalQty) => {
-    setData(
-      data.map((item) => (item.id === entryId ? { ...item, totalQty } : item))
-    );
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center mb-4">
-        <div>
-          <h2 className="text-xl font-black text-gray-800 tracking-tight">{title} Visibility</h2>
-          <p className="text-xs text-gray-500">Record all companies & brands present in this outlet</p>
-        </div>
-        <button
-          onClick={addCompanyEntry}
-          className="flex items-center gap-1.5 bg-red-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-red-600/20 hover:bg-red-700 transition-all active:scale-95"
-        >
-          <Plus className="w-4 h-4" /> Add Company
-        </button>
-      </div>
-
-      {data.length === 0 ? (
-        <div className="text-center p-8 bg-white rounded-2xl border-2 border-dashed border-red-200">
-          <p className="text-gray-500 mb-3 text-sm">No {title.toLowerCase()} companies added yet.</p>
-          <button
-            onClick={addCompanyEntry}
-            className="text-red-600 font-bold text-sm hover:underline"
-          >
-            + Add First Company
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {data.map((item, index) => {
-            const isOtherCompany = item.company === '__OTHER__';
-            const availableBrands = !isOtherCompany && item.company ? categoryCatalog[item.company] || [] : [];
-            const customAddedBrands = (item.brands || []).filter((b) => !availableBrands.includes(b));
-            const isColgate =
-              item.company === 'Colgate' || item.company === 'Colgate-Palmolive';
-            const displayCompanyName = isOtherCompany
-              ? (item.customCompany || '').trim() || 'Other Company'
-              : item.company;
-
-            return (
-              <div 
-                key={item.id} 
-                className={`bg-white p-5 rounded-2xl shadow-sm border transition-all relative ${
-                  isColgate ? 'border-red-300 ring-2 ring-red-500/10' : 'border-gray-200'
-                }`}
-              >
-                <div className="flex justify-between items-center pb-3 border-b border-gray-100 mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white ${
-                      isColgate ? 'bg-red-600' : 'bg-slate-700'
-                    }`}>
-                      {index + 1}
-                    </span>
-                    <span className="text-xs font-bold uppercase tracking-wider text-gray-600">Company Entry</span>
-                    {isColgate && (
-                      <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                        Colgate Focus
-                      </span>
-                    )}
-                  </div>
-                  <button 
-                    onClick={() => removeCompanyEntry(item.id)}
-                    className="text-red-400 hover:text-red-600 transition-colors p-1"
-                    title="Remove entry"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">
-                    Company Name
-                  </label>
-                  <select 
-                    value={item.company}
-                    onChange={(e) => updateCompany(item.id, e.target.value)}
-                    className="w-full border-gray-300 rounded-xl p-2.5 border text-sm font-semibold focus:ring-2 focus:ring-red-500 bg-gray-50/70"
-                  >
-                    <option value="">-- Choose Company --</option>
-                    {Object.keys(categoryCatalog).map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                    <option value="__OTHER__">Other (Write Company & Brand Manually)</option>
-                  </select>
-                </div>
-
-                {isOtherCompany && (
-                  <div className="mb-4 bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 space-y-3">
-                    <div>
-                      <label className="block text-xs font-bold text-amber-900 mb-1 uppercase tracking-wider">
-                        Write Company Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={item.customCompany || ''}
-                        onChange={(e) => updateField(item.id, 'customCompany', e.target.value)}
-                        placeholder="Enter company name manually..."
-                        className="w-full bg-white border-amber-300 rounded-xl p-2.5 text-sm font-semibold border focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {item.company && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                        {isOtherCompany
-                          ? 'Write & Add Brand Name(s)'
-                          : 'Select Brands Present in Outlet (Multiple)'}
-                      </label>
-
-                      {availableBrands.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          {availableBrands.map((bName) => {
-                            const isSelected = (item.brands || []).includes(bName);
-                            return (
-                              <button
-                                key={bName}
-                                type="button"
-                                onClick={() => toggleBrand(item.id, bName)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 ${
-                                  isSelected
-                                    ? 'bg-red-600 text-white border-red-600 shadow-sm'
-                                    : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                                }`}
-                              >
-                                {isSelected && <Check className="w-3.5 h-3.5" />}
-                                {bName}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {customAddedBrands.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-2.5">
-                          {customAddedBrands.map((customBrand) => (
-                            <span
-                              key={customBrand}
-                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white border border-red-600 shadow-sm flex items-center gap-1.5"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              {customBrand}
-                              <button
-                                type="button"
-                                onClick={() => toggleBrand(item.id, customBrand)}
-                                className="ml-1 hover:text-red-200"
-                                title="Remove brand"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={item.customBrandDraft || ''}
-                          onChange={(e) => updateField(item.id, 'customBrandDraft', e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              addCustomBrand(item.id);
-                            }
-                          }}
-                          placeholder={
-                            isOtherCompany
-                              ? 'Type brand name and tap Add...'
-                              : '+ Add unlisted brand manually...'
-                          }
-                          className="flex-1 border-gray-300 rounded-xl px-3 py-2 text-xs font-semibold border focus:ring-2 focus:ring-red-500 bg-gray-50/60"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => addCustomBrand(item.id)}
-                          className="px-3.5 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-900 transition-colors flex items-center gap-1 shrink-0"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Add
-                        </button>
-                      </div>
-                    </div>
-
-                    {hasSKU && (
-                      <div className="space-y-4 pt-3 border-t border-gray-100">
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                            Select SKU Size Range (Multiple)
-                          </label>
-                          <div className="flex flex-wrap gap-2">
-                            {activeSkuRanges.map((skuRange) => {
-                              const isSkuSelected = (item.skus || []).includes(skuRange);
-                              return (
-                                <button
-                                  key={skuRange}
-                                  type="button"
-                                  onClick={() => toggleSku(item.id, skuRange)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1 ${
-                                    isSkuSelected
-                                      ? 'bg-red-600 text-white border-red-600 shadow-sm'
-                                      : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                                  }`}
-                                >
-                                  {isSkuSelected && <Check className="w-3.5 h-3.5" />}
-                                  {skuRange}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {hasQty && (
-                          <div className="bg-red-50/60 p-3.5 rounded-xl border border-red-100">
-                            <label className="block text-xs font-bold text-red-900 mb-1.5 uppercase tracking-wider">
-                              Total {displayCompanyName} Toothpaste Quantity in Outlet
-                            </label>
-                            <div className="relative">
-                              <input 
-                                type="number"
-                                min="0"
-                                value={item.totalQty || ''}
-                                onChange={(e) => updateTotalQty(item.id, e.target.value)}
-                                placeholder="Total units (e.g. 100)"
-                                className="w-full bg-white text-sm font-bold p-3 border border-red-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                              />
-                              <span className="absolute right-3.5 top-3.5 text-xs font-bold text-gray-400 uppercase">
-                                Units
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================================================
-// 10. DAILY ROUTE MAP SECTION (100% Free OpenStreetMap + Circle + Distance)
+// 10. DAILY ROUTE & COVERAGE CIRCLE MAP (100% Free OpenStreetMap + Leaflet)
 // ============================================================================
 const MapSection = ({ internId, localRecords }) => {
-  const mapContainerRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const [mapReady, setMapReady] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(getLocalDateString(0));
-  const [remotePoints, setRemotePoints] = useState(null);
+  const [routeDate, setRouteDate] = useState(getLocalDateString(0));
+  const [routePoints, setRoutePoints] = useState([]);
   const [availableDates, setAvailableDates] = useState([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0);
+  const [leafletReady, setLeafletReady] = useState(typeof window !== 'undefined' && Boolean(window.L));
+
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const layerGroupRef = useRef(null);
+
+  useEffect(() => {
+    if (window.L) {
+      setLeafletReady(true);
+      return;
+    }
+
+    if (!document.getElementById('leaflet-css-cdn')) {
+      const link = document.createElement('link');
+      link.id = 'leaflet-css-cdn';
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(link);
+    }
+
+    if (!document.getElementById('leaflet-js-cdn')) {
+      const script = document.createElement('script');
+      script.id = 'leaflet-js-cdn';
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      script.onload = () => setLeafletReady(true);
+      document.head.appendChild(script);
+    } else {
+      const checkTimer = setInterval(() => {
+        if (window.L) {
+          setLeafletReady(true);
+          clearInterval(checkTimer);
+        }
+      }, 150);
+      return () => clearInterval(checkTimer);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    setRemotePoints(null);
-    if (!GOOGLE_SCRIPT_URL || !internId) {
-      setIsLoadingRoute(false);
+
+    const getLocalPointsForDate = () => {
+      const matching = (localRecords || []).filter(
+        (r) =>
+          sameId(r.internId, internId) &&
+          (!routeDate || normalizeDateString(r.date) === routeDate) &&
+          r.lat &&
+          r.lng
+      );
+      return matching
+        .map((r) => ({
+          lat: parseFloat(r.lat),
+          lng: parseFloat(r.lng),
+          time: r.time || '',
+          label: r.outletName || 'Outlet'
+        }))
+        .reverse();
+    };
+
+    const localDates = Array.from(
+      new Set(
+        (localRecords || [])
+          .filter((r) => sameId(r.internId, internId) && r.lat && r.lng)
+          .map((r) => normalizeDateString(r.date))
+          .filter(Boolean)
+      )
+    )
+      .sort()
+      .reverse();
+
+    if (!GOOGLE_SCRIPT_URL) {
+      const pts = getLocalPointsForDate();
+      setAvailableDates(localDates);
+      setRoutePoints(pts.length > 0 ? pts : SAMPLE_PREVIEW_ROUTE);
       return;
     }
+
     setIsLoadingRoute(true);
-    const url = `${GOOGLE_SCRIPT_URL}?type=route&internId=${encodeURIComponent(internId)}&date=${encodeURIComponent(selectedDate)}`;
-    fetch(url)
+    fetch(
+      `${GOOGLE_SCRIPT_URL}?type=route&internId=${encodeURIComponent(internId)}&date=${encodeURIComponent(
+        routeDate
+      )}`
+    )
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
-        if (Array.isArray(json.availableDates)) {
-          setAvailableDates(json.availableDates.map((d) => normalizeDateString(d)).filter(Boolean));
-        }
-        if (Array.isArray(json.points)) {
-          setRemotePoints(
-            json.points
-              .filter((p) => !isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lng)))
+        const pts = Array.isArray(json.points)
+          ? json.points
               .map((p) => ({
-                ...p,
                 lat: parseFloat(p.lat),
-                lng: parseFloat(p.lng)
+                lng: parseFloat(p.lng),
+                time: p.time || '',
+                label: p.label || ''
               }))
-          );
-        } else {
-          setRemotePoints([]);
-        }
+              .filter((p) => !isNaN(p.lat) && !isNaN(p.lng))
+          : [];
+        const remoteDates = Array.isArray(json.availableDates) ? json.availableDates : [];
+        const mergedDates = Array.from(new Set([...remoteDates, ...localDates]))
+          .sort()
+          .reverse();
+        setAvailableDates(mergedDates);
+        setRoutePoints(pts.length > 0 ? pts : getLocalPointsForDate());
       })
       .catch(() => {
-        if (!cancelled) setRemotePoints([]);
+        if (!cancelled) {
+          setAvailableDates(localDates);
+          setRoutePoints(getLocalPointsForDate());
+        }
       })
       .finally(() => {
         if (!cancelled) setIsLoadingRoute(false);
@@ -2330,255 +3349,112 @@ const MapSection = ({ internId, localRecords }) => {
     return () => {
       cancelled = true;
     };
-  }, [internId, selectedDate, refreshTick]);
+  }, [internId, routeDate, localRecords]);
 
   useEffect(() => {
-    if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link');
-      link.id = 'leaflet-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-    }
+    if (!leafletReady || !mapContainerRef.current || mapInstanceRef.current) return;
 
-    if (window.L) {
-      setMapReady(true);
-    } else if (!document.getElementById('leaflet-js')) {
-      const script = document.createElement('script');
-      script.id = 'leaflet-js';
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.async = true;
-      script.onload = () => setMapReady(true);
-      document.head.appendChild(script);
-    } else {
-      const interval = setInterval(() => {
-        if (window.L) {
-          clearInterval(interval);
-          setMapReady(true);
-        }
-      }, 100);
-      return () => clearInterval(interval);
-    }
-  }, []);
-
-  const localDayPoints = localRecords
-    .filter(
-      (r) =>
-        sameId(r.internId, internId) &&
-        normalizeDateString(r.date) === selectedDate &&
-        r.lat &&
-        r.lng
-    )
-    .reverse()
-    .map((r, i) => ({
-      lat: parseFloat(r.lat),
-      lng: parseFloat(r.lng),
-      time: r.time,
-      label: `Outlet #${i + 1}: ${r.outletName}`
-    }));
-
-  const mergedAvailableDates = Array.from(
-    new Set([
-      ...availableDates,
-      ...localRecords
-        .filter((r) => sameId(r.internId, internId) && r.lat && r.lng)
-        .map((r) => normalizeDateString(r.date))
-        .filter(Boolean)
-    ])
-  ).sort((a, b) => b.localeCompare(a));
-
-  const hasLiveGpsData =
-    (remotePoints && remotePoints.length > 0) || localDayPoints.length > 0;
-
-  const activePoints =
-    remotePoints && remotePoints.length > 0
-      ? remotePoints
-      : localDayPoints.length > 0
-      ? localDayPoints
-      : !GOOGLE_SCRIPT_URL
-      ? SAMPLE_PREVIEW_ROUTE
-      : [];
-
-  const isUsingSample = !GOOGLE_SCRIPT_URL && !hasLiveGpsData;
-  const distanceKm = computeTotalRouteKm(activePoints);
-
-  useEffect(() => {
-    if (!mapReady || !mapContainerRef.current || !window.L) return;
-
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
-      mapInstanceRef.current = null;
-    }
-
-    if (activePoints.length === 0) {
-      const map = window.L.map(mapContainerRef.current, { zoomControl: true }).setView(
-        [23.8103, 90.4125],
-        13
-      );
-      mapInstanceRef.current = map;
-      window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '© OpenStreetMap contributors'
-      }).addTo(map);
-      setTimeout(() => map.invalidateSize(), 250);
-      return () => {
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.remove();
-          mapInstanceRef.current = null;
-        }
-      };
-    }
-
-    const coords = activePoints.map((p) => [p.lat, p.lng]);
-    const avgLat = coords.reduce((sum, c) => sum + c[0], 0) / coords.length;
-    const avgLng = coords.reduce((sum, c) => sum + c[1], 0) / coords.length;
-
-    const map = window.L.map(mapContainerRef.current, {
-      zoomControl: true
-    }).setView([avgLat, avgLng], 15);
-    mapInstanceRef.current = map;
-
-    window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const L = window.L;
+    const map = L.map(mapContainerRef.current, { zoomControl: true }).setView([23.8103, 90.4125], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
-    if (coords.length > 1) {
-      window.L.polyline(coords, {
-        color: '#ce1126',
-        weight: 4,
-        opacity: 0.9
-      }).addTo(map);
-    }
-
-    window.L.circle(coords[0], {
-      radius: 20,
-      color: '#16a34a',
-      fillColor: '#22c55e',
-      fillOpacity: 0.85
-    })
-      .bindPopup(`<b>Start Point</b><br>${activePoints[0].label || activePoints[0].time}`)
-      .addTo(map);
-
-    activePoints.slice(1, -1).forEach((pt, idx) => {
-      window.L.circleMarker([pt.lat, pt.lng], {
-        radius: 6,
-        color: '#ce1126',
-        fillColor: '#ffffff',
-        fillOpacity: 1,
-        weight: 2.5
-      })
-        .bindPopup(`<b>${pt.label || `Stop #${idx + 2}`}</b><br>Time: ${pt.time}`)
-        .addTo(map);
-    });
-
-    let maxDistMeters = 120;
-    coords.forEach((c) => {
-      const dMeters = haversineKm(avgLat, avgLng, c[0], c[1]) * 1000;
-      if (dMeters + 60 > maxDistMeters) maxDistMeters = dMeters + 60;
-    });
-
-    window.L.circle([avgLat, avgLng], {
-      radius: maxDistMeters,
-      color: '#dc2626',
-      fillColor: '#f87171',
-      fillOpacity: 0.18
-    }).addTo(map);
-
-    const lastPt = activePoints[activePoints.length - 1];
-    window.L.circleMarker([lastPt.lat, lastPt.lng], {
-      radius: 8,
-      color: '#991b1b',
-      fillColor: '#dc2626',
-      fillOpacity: 1
-    })
-      .bindPopup(`<b>Latest Location</b><br>${lastPt.label || lastPt.time}`)
-      .addTo(map);
-
-    if (coords.length > 1) {
-      map.fitBounds(coords, { padding: [40, 40] });
-    }
-
-    setTimeout(() => {
-      map.invalidateSize();
-    }, 250);
+    mapInstanceRef.current = map;
+    layerGroupRef.current = L.layerGroup().addTo(map);
 
     return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
+      map.remove();
+      mapInstanceRef.current = null;
+      layerGroupRef.current = null;
     };
-  }, [mapReady, internId, selectedDate, remotePoints, localRecords]);
+  }, [leafletReady]);
+
+  useEffect(() => {
+    if (!leafletReady || !mapInstanceRef.current || !layerGroupRef.current) return;
+    const L = window.L;
+    const map = mapInstanceRef.current;
+    const group = layerGroupRef.current;
+
+    group.clearLayers();
+    if (!routePoints.length) return;
+
+    const latLngs = routePoints.map((p) => [p.lat, p.lng]);
+
+    if (latLngs.length >= 2) {
+      L.polyline(latLngs, { color: '#CE1126', weight: 4, opacity: 0.9 }).addTo(group);
+    }
+
+    const centerLat = routePoints.reduce((s, p) => s + p.lat, 0) / routePoints.length;
+    const centerLng = routePoints.reduce((s, p) => s + p.lng, 0) / routePoints.length;
+    let maxDistMeters = 120;
+    routePoints.forEach((p) => {
+      const distM = haversineKm(centerLat, centerLng, p.lat, p.lng) * 1000;
+      if (distM > maxDistMeters) maxDistMeters = distM;
+    });
+
+    L.circle([centerLat, centerLng], {
+      radius: maxDistMeters + 80,
+      color: '#CE1126',
+      weight: 2,
+      fillColor: '#CE1126',
+      fillOpacity: 0.14
+    }).addTo(group);
+
+    routePoints.forEach((p, i) => {
+      const marker = L.circleMarker([p.lat, p.lng], {
+        radius: 7,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: i === 0 ? '#16a34a' : '#CE1126',
+        fillOpacity: 1
+      }).addTo(group);
+      marker.bindPopup(
+        `<strong>#${i + 1} ${p.label || 'GPS Stop'}</strong><br/>${p.time || ''}<br/>${p.lat.toFixed(
+          5
+        )}, ${p.lng.toFixed(5)}`
+      );
+    });
+
+    const bounds = L.latLngBounds(latLngs);
+    map.fitBounds(bounds.pad(0.25), { maxZoom: 16 });
+  }, [leafletReady, routePoints]);
+
+  const totalDistanceKm = computeTotalRouteKm(routePoints);
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-[70vh] flex flex-col">
-      <div className="p-4 border-b border-gray-100 bg-red-50/40 space-y-2.5">
-        <div className="flex justify-between items-center">
+    <div className="space-y-4">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="font-bold text-gray-800">Daily Route Tracker</h2>
-            <p className="text-xs text-gray-500">
-              Intern: <strong>{internId}</strong>{' '}
-              {isLoadingRoute
-                ? '• Loading GPS...'
-                : isUsingSample
-                ? '• Sample Route Preview'
-                : activePoints.length > 0
-                ? `• ${activePoints.length} GPS Points`
-                : `• No GPS logs on ${selectedDate}`}
+            <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
+              <MapIcon className="w-4 h-4 text-red-600" /> Daily Route & Territory Circle
+            </h2>
+            <p className="text-[11px] text-gray-500">
+              Tracking <strong>{internId}</strong> • Free OpenStreetMap (No API Key)
             </p>
           </div>
-          <div className="text-right">
-            <span className="block text-base font-black text-red-600">{distanceKm.toFixed(2)} km</span>
-            <span className="text-[11px] text-gray-500">Distance Covered</span>
-          </div>
+          <input
+            type="date"
+            value={routeDate}
+            onChange={(e) => setRouteDate(normalizeDateString(e.target.value))}
+            className="border border-gray-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-gray-50"
+          />
         </div>
 
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <span className="text-[11px] font-bold text-gray-600 uppercase">Route Date:</span>
-          <div className="flex items-center gap-1.5">
-            {GOOGLE_SCRIPT_URL && (
-              <button
-                type="button"
-                onClick={() => setRefreshTick((t) => t + 1)}
-                className="p-1.5 rounded-md bg-white border border-gray-300 text-gray-600 hover:text-red-600"
-                title="Reload route from Google Sheet"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingRoute ? 'animate-spin text-red-600' : ''}`} />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setSelectedDate(getLocalDateString(0))}
-              className={`px-2 py-1 rounded-md text-[11px] font-bold border ${
-                selectedDate === getLocalDateString(0)
-                  ? 'bg-red-600 text-white border-red-600'
-                  : 'bg-white text-gray-700 border-gray-300'
-              }`}
-            >
-              Today
-            </button>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => e.target.value && setSelectedDate(normalizeDateString(e.target.value))}
-              className="border border-gray-300 rounded-lg px-2.5 py-1 text-xs font-semibold bg-white focus:ring-2 focus:ring-red-500"
-            />
-          </div>
-        </div>
-
-        {mergedAvailableDates.length > 0 && (
-          <div className="flex items-center gap-1.5 flex-wrap pt-1">
-            <span className="text-[10px] font-bold uppercase text-gray-500">Dates with GPS:</span>
-            {mergedAvailableDates.slice(0, 6).map((d) => (
+        {availableDates.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase text-gray-500 mr-1">Dates with GPS:</span>
+            {availableDates.slice(0, 7).map((d) => (
               <button
                 key={d}
                 type="button"
-                onClick={() => setSelectedDate(d)}
-                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all ${
-                  selectedDate === d
+                onClick={() => setRouteDate(d)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${
+                  routeDate === d
                     ? 'bg-red-600 text-white border-red-600'
-                    : 'bg-white text-gray-700 border-gray-200 hover:border-red-300'
+                    : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-red-300'
                 }`}
               >
                 {d}
@@ -2586,23 +3462,35 @@ const MapSection = ({ internId, localRecords }) => {
             ))}
           </div>
         )}
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="p-3 rounded-xl bg-red-50 border border-red-100">
+            <span className="text-[10px] font-bold uppercase text-red-700 block">Distance Covered</span>
+            <span className="text-xl font-black text-red-900">{totalDistanceKm.toFixed(2)} km</span>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <span className="text-[10px] font-bold uppercase text-slate-600 block">GPS Points Logged</span>
+            <span className="text-xl font-black text-slate-900">{routePoints.length}</span>
+          </div>
+        </div>
       </div>
 
-      <div className="flex-1 relative z-0">
-        {!mapReady && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
-            <div className="flex items-center gap-2 text-red-600">
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span className="text-sm font-medium">Loading OpenStreetMap...</span>
-            </div>
+      <div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden">
+        {isLoadingRoute && (
+          <div className="absolute inset-0 z-[400] bg-white/75 flex items-center justify-center text-xs font-bold text-red-700 gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading GPS route...
           </div>
         )}
-        {mapReady && !isLoadingRoute && GOOGLE_SCRIPT_URL && activePoints.length === 0 && (
-          <div className="absolute top-3 left-3 right-3 z-[400] bg-white/95 backdrop-blur border border-amber-200 rounded-xl px-3.5 py-2.5 shadow-md text-xs font-semibold text-amber-900 text-center">
-            No outlets or GPS pings recorded for <strong>{internId}</strong> on <strong>{selectedDate}</strong>.
-          </div>
+        <div
+          ref={mapContainerRef}
+          className="w-full h-80 sm:h-96 rounded-xl z-0"
+          style={{ minHeight: '320px' }}
+        />
+        {!isLoadingRoute && routePoints.length === 0 && (
+          <p className="text-center text-xs font-semibold text-gray-500 py-3">
+            No GPS route points logged for <strong>{internId}</strong> on <strong>{routeDate}</strong>.
+          </p>
         )}
-        <div ref={mapContainerRef} className="w-full h-full" style={{ minHeight: '350px' }} />
       </div>
     </div>
   );
